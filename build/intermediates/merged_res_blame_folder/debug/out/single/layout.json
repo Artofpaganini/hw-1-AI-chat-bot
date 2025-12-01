@@ -1,0 +1,10 @@
+[
+    {
+        "merged": "com.example.aiagentchat-mergeDebugResources-33:/layout/activity_main.xml",
+        "source": "com.example.aiagentchat-main-36:/layout/activity_main.xml"
+    },
+    {
+        "merged": "com.example.aiagentchat-mergeDebugResources-33:/layout/item_message.xml",
+        "source": "com.example.aiagentchat-main-36:/layout/item_message.xml"
+    }
+]
