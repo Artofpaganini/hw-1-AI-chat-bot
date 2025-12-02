@@ -4,7 +4,7 @@
             "outputFile": "com.example.aiagentchat-mergeDebugResources-32:/values-h320dp-port-v13/values-h320dp-port-v13.xml",
             "map": [
                 {
-                    "source": "C:\\Users\\user\\.gradle\\caches\\9.0-milestone-1\\transforms\\770b3be4749586743e4e9057a4cdf4ea\\transformed\\material-1.10.0\\res\\values-h320dp-port-v13\\values-h320dp-port-v13.xml",
+                    "source": "/Users/Victor/.gradle/caches/9.0-milestone-1/transforms/770b3be4749586743e4e9057a4cdf4ea/transformed/material-1.10.0/res/values-h320dp-port-v13/values-h320dp-port-v13.xml",
                     "from": {
                         "startLines": "2",
                         "startColumns": "4",

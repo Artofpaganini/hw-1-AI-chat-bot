@@ -3170,6 +3170,7 @@ id center_vertical
 id chain
 id chain2
 id chains
+id checkBoxFormat
 id checkbox
 id checked
 id chronometer
@@ -3267,6 +3268,7 @@ id graph_wrap
 id group_divider
 id grouping
 id groups
+id headerTitle
 id header_title
 id hide_ime_id
 id hideable

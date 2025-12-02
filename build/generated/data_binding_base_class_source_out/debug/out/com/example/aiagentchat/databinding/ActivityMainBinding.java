@@ -8,6 +8,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.constraintlayout.widget.ConstraintLayout;
@@ -30,6 +31,9 @@ public final class ActivityMainBinding implements ViewBinding {
   public final EditText editTextMessage;
 
   @NonNull
+  public final TextView headerTitle;
+
+  @NonNull
   public final LinearLayout inputLayout;
 
   @NonNull
@@ -39,11 +43,13 @@ public final class ActivityMainBinding implements ViewBinding {
   public final RecyclerView recyclerViewMessages;
 
   private ActivityMainBinding(@NonNull ConstraintLayout rootView, @NonNull Button buttonSend,
-      @NonNull EditText editTextMessage, @NonNull LinearLayout inputLayout,
-      @NonNull ProgressBar progressBar, @NonNull RecyclerView recyclerViewMessages) {
+      @NonNull EditText editTextMessage, @NonNull TextView headerTitle,
+      @NonNull LinearLayout inputLayout, @NonNull ProgressBar progressBar,
+      @NonNull RecyclerView recyclerViewMessages) {
     this.rootView = rootView;
     this.buttonSend = buttonSend;
     this.editTextMessage = editTextMessage;
+    this.headerTitle = headerTitle;
     this.inputLayout = inputLayout;
     this.progressBar = progressBar;
     this.recyclerViewMessages = recyclerViewMessages;
@@ -88,6 +94,12 @@ public final class ActivityMainBinding implements ViewBinding {
         break missingId;
       }
 
+      id = R.id.headerTitle;
+      TextView headerTitle = ViewBindings.findChildViewById(rootView, id);
+      if (headerTitle == null) {
+        break missingId;
+      }
+
       id = R.id.inputLayout;
       LinearLayout inputLayout = ViewBindings.findChildViewById(rootView, id);
       if (inputLayout == null) {
@@ -107,7 +119,7 @@ public final class ActivityMainBinding implements ViewBinding {
       }
 
       return new ActivityMainBinding((ConstraintLayout) rootView, buttonSend, editTextMessage,
-          inputLayout, progressBar, recyclerViewMessages);
+          headerTitle, inputLayout, progressBar, recyclerViewMessages);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));
