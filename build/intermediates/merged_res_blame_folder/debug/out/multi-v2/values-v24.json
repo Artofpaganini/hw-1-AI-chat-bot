@@ -4,7 +4,7 @@
             "outputFile": "com.example.aiagentchat-mergeDebugResources-32:/values-v24/values-v24.xml",
             "map": [
                 {
-                    "source": "C:\\Users\\user\\.gradle\\caches\\9.0-milestone-1\\transforms\\770b3be4749586743e4e9057a4cdf4ea\\transformed\\material-1.10.0\\res\\values-v24\\values-v24.xml",
+                    "source": "/Users/Victor/.gradle/caches/9.0-milestone-1/transforms/770b3be4749586743e4e9057a4cdf4ea/transformed/material-1.10.0/res/values-v24/values-v24.xml",
                     "from": {
                         "startLines": "2,3,4,5,6,9,12,15",
                         "startColumns": "4,4,4,4,4,4,4,4",
@@ -23,7 +23,7 @@
                     }
                 },
                 {
-                    "source": "C:\\Users\\user\\.gradle\\caches\\9.0-milestone-1\\transforms\\818440df55c5b22950fdce982f2f1b19\\transformed\\appcompat-1.6.1\\res\\values-v24\\values-v24.xml",
+                    "source": "/Users/Victor/.gradle/caches/9.0-milestone-1/transforms/818440df55c5b22950fdce982f2f1b19/transformed/appcompat-1.6.1/res/values-v24/values-v24.xml",
                     "from": {
                         "startLines": "2,3",
                         "startColumns": "4,4",

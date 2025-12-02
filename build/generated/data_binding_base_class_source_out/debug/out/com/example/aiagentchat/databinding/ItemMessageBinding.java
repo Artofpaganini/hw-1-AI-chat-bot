@@ -4,6 +4,7 @@ package com.example.aiagentchat.databinding;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.CheckBox;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -25,6 +26,9 @@ public final class ItemMessageBinding implements ViewBinding {
   public final CardView cardView;
 
   @NonNull
+  public final CheckBox checkBoxFormat;
+
+  @NonNull
   public final LinearLayout messageContainer;
 
   @NonNull
@@ -34,10 +38,11 @@ public final class ItemMessageBinding implements ViewBinding {
   public final TextView textViewSender;
 
   private ItemMessageBinding(@NonNull FrameLayout rootView, @NonNull CardView cardView,
-      @NonNull LinearLayout messageContainer, @NonNull TextView textViewMessage,
-      @NonNull TextView textViewSender) {
+      @NonNull CheckBox checkBoxFormat, @NonNull LinearLayout messageContainer,
+      @NonNull TextView textViewMessage, @NonNull TextView textViewSender) {
     this.rootView = rootView;
     this.cardView = cardView;
+    this.checkBoxFormat = checkBoxFormat;
     this.messageContainer = messageContainer;
     this.textViewMessage = textViewMessage;
     this.textViewSender = textViewSender;
@@ -76,6 +81,12 @@ public final class ItemMessageBinding implements ViewBinding {
         break missingId;
       }
 
+      id = R.id.checkBoxFormat;
+      CheckBox checkBoxFormat = ViewBindings.findChildViewById(rootView, id);
+      if (checkBoxFormat == null) {
+        break missingId;
+      }
+
       id = R.id.messageContainer;
       LinearLayout messageContainer = ViewBindings.findChildViewById(rootView, id);
       if (messageContainer == null) {
@@ -94,8 +105,8 @@ public final class ItemMessageBinding implements ViewBinding {
         break missingId;
       }
 
-      return new ItemMessageBinding((FrameLayout) rootView, cardView, messageContainer,
-          textViewMessage, textViewSender);
+      return new ItemMessageBinding((FrameLayout) rootView, cardView, checkBoxFormat,
+          messageContainer, textViewMessage, textViewSender);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));

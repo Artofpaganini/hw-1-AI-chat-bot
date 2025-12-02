@@ -13,7 +13,9 @@ color teal_700
 color white
 id buttonSend
 id cardView
+id checkBoxFormat
 id editTextMessage
+id headerTitle
 id inputLayout
 id menu_settings
 id messageContainer
