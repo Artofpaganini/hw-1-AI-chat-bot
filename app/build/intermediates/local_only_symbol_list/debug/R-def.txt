@@ -1,0 +1,28 @@
+R_DEF: Internal format may change without notice
+local
+color background
+color black
+color ic_launcher_background
+color message_ai
+color message_user
+color purple_200
+color purple_500
+color purple_700
+color teal_200
+color teal_700
+color white
+mipmap ic_launcher
+mipmap ic_launcher_foreground
+mipmap ic_launcher_round
+string app_name
+string empty_message
+string error_message
+string hint_message
+string provider_selected
+string select_provider
+string send
+string settings
+string thinking
+style Theme.AIAgentChat
+xml backup_rules
+xml data_extraction_rules

@@ -1,0 +1,16 @@
+-- Merging decision tree log ---
+manifest
+ADDED from C:\work\aichat\hw-1-AI-chat-bot\feature\chat\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest1585893543174392695.xml:2:13-83
+INJECTED from C:\work\aichat\hw-1-AI-chat-bot\feature\chat\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest1585893543174392695.xml:2:13-83
+	package
+		INJECTED from C:\work\aichat\hw-1-AI-chat-bot\feature\chat\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest1585893543174392695.xml
+	xmlns:android
+		ADDED from C:\work\aichat\hw-1-AI-chat-bot\feature\chat\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest1585893543174392695.xml:2:23-81
+uses-sdk
+INJECTED from C:\work\aichat\hw-1-AI-chat-bot\feature\chat\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest1585893543174392695.xml reason: use-sdk injection requested
+INJECTED from C:\work\aichat\hw-1-AI-chat-bot\feature\chat\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest1585893543174392695.xml
+INJECTED from C:\work\aichat\hw-1-AI-chat-bot\feature\chat\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest1585893543174392695.xml
+	android:targetSdkVersion
+		INJECTED from C:\work\aichat\hw-1-AI-chat-bot\feature\chat\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest1585893543174392695.xml
+	android:minSdkVersion
+		INJECTED from C:\work\aichat\hw-1-AI-chat-bot\feature\chat\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest1585893543174392695.xml

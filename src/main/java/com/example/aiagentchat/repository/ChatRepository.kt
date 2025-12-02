@@ -9,7 +9,7 @@ data class AiResponse(
 )
 
 class ChatRepository(
-    private val apiKey: String? = null
+    private val apiKey: String = "sk-d06b698223034c60a9cdb3d7bc8fab15"
 ) {
     private val conversationHistory = mutableListOf<ChatMessage>()
     
@@ -41,12 +41,6 @@ class ChatRepository(
 
     suspend fun sendMessage(userMessage: String): Result<AiResponse> {
         return try {
-            if (apiKey == null) {
-                return Result.failure(
-                    Exception("API ключ не указан. Получите ключ на https://platform.deepseek.com/")
-                )
-            }
-
             val messages = mutableListOf<ChatMessage>()
             messages.add(ChatMessage("system", JSON_SYSTEM_PROMPT))
             messages.addAll(conversationHistory)
