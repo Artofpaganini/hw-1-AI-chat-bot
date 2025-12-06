@@ -53,7 +53,7 @@ class MainActivity : AppCompatActivity() {
             showApiKeyDialog()
             return
         }
-        chatRepository = ChatRepository(apiKey)
+        chatRepository = ChatRepository(apiKey, this)
     }
 
     private fun setupRecyclerView() {
@@ -101,24 +101,28 @@ class MainActivity : AppCompatActivity() {
             showLoading(false)
 
             result
-                .onSuccess { response ->
-                    val displayText = response.parsedData?.toJsonText() ?: response.rawResponse
-                    val aiMessage = Message(
-                        text = displayText,
-                        isUser = false,
-                        rawResponse = response.rawResponse,
-                        parsedData = response.parsedData
-                    )
-                    messageAdapter.addMessage(aiMessage)
-                    binding.recyclerViewMessages.smoothScrollToPosition(messageAdapter.itemCount - 1)
-                }
-                .onFailure { error ->
-                    Toast.makeText(
-                        this@MainActivity,
-                        "${getString(R.string.error_message)}: ${error.message}",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
+                    .onSuccess { response ->
+                        val displayText = response.parsedData?.toJsonText() ?: response.rawResponse
+                        val aiMessage =
+                                Message(
+                                        text = displayText,
+                                        isUser = false,
+                                        rawResponse = response.rawResponse,
+                                        parsedData = response.parsedData
+                                )
+                        messageAdapter.addMessage(aiMessage)
+                        binding.recyclerViewMessages.smoothScrollToPosition(
+                                messageAdapter.itemCount - 1
+                        )
+                    }
+                    .onFailure { error ->
+                        Toast.makeText(
+                                        this@MainActivity,
+                                        "${getString(R.string.error_message)}: ${error.message}",
+                                        Toast.LENGTH_LONG
+                                )
+                                .show()
+                    }
         }
     }
 
@@ -131,31 +135,33 @@ class MainActivity : AppCompatActivity() {
     private fun showApiKeyDialog() {
         val input = android.widget.EditText(this)
         input.hint = "Введите ваш DeepSeek API ключ"
-        input.inputType = android.text.InputType.TYPE_CLASS_TEXT or
-                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        input.inputType =
+                android.text.InputType.TYPE_CLASS_TEXT or
+                        android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
 
         if (!apiKey.isNullOrEmpty()) {
             input.setText(apiKey)
         }
 
         AlertDialog.Builder(this)
-            .setTitle("Настройка API ключа")
-            .setMessage(
-                "Для работы необходим DeepSeek API ключ.\n\n" +
-                "Получите ключ на:\nhttps://platform.deepseek.com/"
-            )
-            .setView(input)
-            .setPositiveButton("Сохранить") { _, _ ->
-                val key = input.text.toString().trim()
-                if (key.isNotEmpty()) {
-                    apiKey = key
-                    initializeRepository()
-                    Toast.makeText(this, "API ключ сохранен", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(this, "API ключ не может быть пустым", Toast.LENGTH_SHORT).show()
+                .setTitle("Настройка API ключа")
+                .setMessage(
+                        "Для работы необходим DeepSeek API ключ.\n\n" +
+                                "Получите ключ на:\nhttps://platform.deepseek.com/"
+                )
+                .setView(input)
+                .setPositiveButton("Сохранить") { _, _ ->
+                    val key = input.text.toString().trim()
+                    if (key.isNotEmpty()) {
+                        apiKey = key
+                        initializeRepository()
+                        Toast.makeText(this, "API ключ сохранен", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this, "API ключ не может быть пустым", Toast.LENGTH_SHORT)
+                                .show()
+                    }
                 }
-            }
-            .setNegativeButton("Отмена", null)
-            .show()
+                .setNegativeButton("Отмена", null)
+                .show()
     }
 }
