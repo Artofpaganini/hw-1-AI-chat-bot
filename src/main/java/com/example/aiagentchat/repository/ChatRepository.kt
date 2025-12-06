@@ -1,15 +1,31 @@
 package com.example.aiagentchat.repository
 
-import com.example.aiagentchat.api.*
+import android.content.Context
+import android.os.Environment
+import android.util.Log
+import com.example.aiagentchat.api.ChatMessage
+import com.example.aiagentchat.api.DeepSeekChatRequest
+import com.example.aiagentchat.api.RetrofitClient
 import com.example.aiagentchat.data.AiResponseData
+import java.io.File
 
 data class AiResponse(val rawResponse: String, val parsedData: AiResponseData?)
 
-class ChatRepository(private val apiKey: String? = null) {
+class ChatRepository(private val apiKey: String? = null, private val context: Context? = null) {
     private val conversationHistory = mutableListOf<ChatMessage>()
     private var userMessageCount = 0
+    private var isFirstMessage = true
+    private var currentPromptType: PromptType? = null
+
+    private enum class PromptType {
+        BEAUTY,
+        PRISONER,
+        ANALYST
+    }
 
     companion object {
+        private const val ANALYTICS_FILE_NAME = "analytic-result.txt"
+
         // SystemPrompt 1: Знойная красотка в баре
         private const val BEAUTY_SYSTEM_PROMPT =
                 """Ты — знойная, обаятельная красотка, которая подкатывает к посетителю в баре. Твоя задача — флиртовать, шутить, льстить и создавать игривую атмосферу.
@@ -94,6 +110,12 @@ class ChatRepository(private val apiKey: String? = null) {
                 )
             }
 
+            // Очищаем файл аналитики при первом сообщении новой сессии
+            if (isFirstMessage) {
+                clearAnalyticsFile()
+                isFirstMessage = false
+            }
+
             // Увеличиваем счетчик сообщений пользователя
             userMessageCount++
 
@@ -104,13 +126,28 @@ class ChatRepository(private val apiKey: String? = null) {
                             messageLower.contains("аналитика") ||
                             messageLower.contains("анализ")
 
-            // Выбираем systemPrompt в зависимости от запроса или номера сообщения
-            val systemPrompt =
+            // Определяем тип промпта
+            val newPromptType =
                     when {
-                        isAnalyticsRequest -> ANALYST_SYSTEM_PROMPT
-                        userMessageCount < 3 -> BEAUTY_SYSTEM_PROMPT
-                        else -> PRISONER_SYSTEM_PROMPT
+                        isAnalyticsRequest -> PromptType.ANALYST
+                        userMessageCount < 4 -> PromptType.BEAUTY
+                        else -> PromptType.PRISONER
                     }
+
+            // Если промпт изменился, очищаем историю для чистого контекста
+            if (currentPromptType != null && currentPromptType != newPromptType) {
+                conversationHistory.clear()
+            }
+            currentPromptType = newPromptType
+
+            // Выбираем systemPrompt
+            val systemPrompt =
+                    when (newPromptType) {
+                        PromptType.ANALYST -> ANALYST_SYSTEM_PROMPT
+                        PromptType.BEAUTY -> BEAUTY_SYSTEM_PROMPT
+                        PromptType.PRISONER -> PRISONER_SYSTEM_PROMPT
+                    }
+
             val messages = mutableListOf<ChatMessage>()
             messages.add(ChatMessage("system", systemPrompt))
             messages.addAll(conversationHistory)
@@ -138,6 +175,11 @@ class ChatRepository(private val apiKey: String? = null) {
                 conversationHistory.add(ChatMessage("user", userMessage))
                 conversationHistory.add(ChatMessage("assistant", content))
 
+                // Если это ответ аналитика, записываем в файл
+                if (isAnalyticsRequest) {
+                    writeAnalyticsToFile(content)
+                }
+
                 // Для диалога не парсим JSON, просто возвращаем текст
                 Result.success(AiResponse(rawResponse = content, parsedData = null))
             } else {
@@ -152,7 +194,150 @@ class ChatRepository(private val apiKey: String? = null) {
     fun clearHistory() {
         conversationHistory.clear()
         userMessageCount = 0
+        isFirstMessage = true
+        currentPromptType = null
+        clearAnalyticsFile()
     }
 
     fun getUserMessageCount(): Int = userMessageCount
+
+    private fun clearAnalyticsFile() {
+        context?.let { ctx ->
+            try {
+                // Очищаем в external storage
+                val externalDir = ctx.getExternalFilesDir(null)
+                if (externalDir != null) {
+                    val externalFile = File(externalDir, ANALYTICS_FILE_NAME)
+                    if (externalFile.exists()) {
+                        externalFile.writeText("")
+                    }
+                }
+
+                // Очищаем в files directory
+                val filesDir = ctx.filesDir
+                val filesFile = File(filesDir, ANALYTICS_FILE_NAME)
+                if (filesFile.exists()) {
+                    filesFile.writeText("")
+                }
+            } catch (e: Exception) {
+                // Игнорируем ошибки
+            }
+        }
+                ?: run {
+                    // Если context отсутствует, пробуем очистить в текущей директории
+                    try {
+                        val file = File(ANALYTICS_FILE_NAME)
+                        if (file.exists()) {
+                            file.writeText("")
+                        }
+                    } catch (e: Exception) {
+                        // Игнорируем ошибки
+                    }
+                }
+    }
+
+    private fun writeAnalyticsToFile(content: String) {
+        // Список путей для попытки записи
+        val filePaths = mutableListOf<File>()
+
+        context?.let { ctx ->
+            try {
+                // 1. Пытаемся записать в корень проекта (если доступен через external storage)
+                try {
+                    val parentDir =
+                            ctx.getExternalFilesDir(null)?.parentFile?.parentFile?.parentFile
+                    if (parentDir != null && parentDir.exists()) {
+                        val projectRoot = File(parentDir, ANALYTICS_FILE_NAME)
+                        filePaths.add(projectRoot)
+                    }
+                } catch (e: Exception) {
+                    // Игнорируем
+                }
+
+                // 2. Пытаемся записать в корень проекта через абсолютный путь
+                try {
+                    val currentDirPath = System.getProperty("user.dir")
+                    if (currentDirPath != null) {
+                        val currentDir = File(currentDirPath)
+                        if (currentDir.exists()) {
+                            val projectFile = File(currentDir, ANALYTICS_FILE_NAME)
+                            filePaths.add(projectFile)
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Игнорируем
+                }
+
+                // 3. External storage (гарантированно работает)
+                val externalDir = ctx.getExternalFilesDir(null)
+                if (externalDir != null) {
+                    filePaths.add(File(externalDir, ANALYTICS_FILE_NAME))
+                }
+
+                // 4. Files directory приложения
+                filePaths.add(File(ctx.filesDir, ANALYTICS_FILE_NAME))
+
+                // 5. Downloads (если доступен)
+                try {
+                    val downloadsDir = ctx.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+                    if (downloadsDir != null) {
+                        filePaths.add(File(downloadsDir, ANALYTICS_FILE_NAME))
+                    }
+                } catch (e: Exception) {
+                    // Игнорируем
+                }
+
+                // Записываем во все доступные места
+                var successCount = 0
+                for (file in filePaths) {
+                    try {
+                        // Создаем директорию, если не существует
+                        file.parentFile?.mkdirs()
+
+                        // Проверяем, существует ли файл
+                        if (file.exists()) {
+                            // Очищаем существующий файл
+                            file.writeText("", Charsets.UTF_8)
+                        }
+
+                        // Записываем контент (создаст файл, если не существует)
+                        file.writeText(content, Charsets.UTF_8)
+                        successCount++
+                        Log.d("ChatRepository", "Файл записан: ${file.absolutePath}")
+                    } catch (e: Exception) {
+                        Log.w(
+                                "ChatRepository",
+                                "Не удалось записать в ${file.absolutePath}: ${e.message}",
+                                e
+                        )
+                    }
+                }
+
+                if (successCount == 0) {
+                    Log.e("ChatRepository", "Не удалось записать файл ни в одно место")
+                } else {
+                    Log.i("ChatRepository", "Файл успешно записан в $successCount место(а)")
+                }
+            } catch (e: Exception) {
+                Log.e("ChatRepository", "Критическая ошибка записи аналитики: ${e.message}", e)
+            }
+        }
+                ?: run {
+                    // Если context отсутствует, пробуем записать в текущую директорию
+                    try {
+                        val file = File(ANALYTICS_FILE_NAME)
+                        if (file.exists()) {
+                            file.writeText("", Charsets.UTF_8)
+                        }
+                        file.writeText(content, Charsets.UTF_8)
+                        Log.d("ChatRepository", "Файл записан без context: ${file.absolutePath}")
+                    } catch (e: Exception) {
+                        Log.e(
+                                "ChatRepository",
+                                "Ошибка записи аналитики без context: ${e.message}",
+                                e
+                        )
+                    }
+                }
+    }
 }
