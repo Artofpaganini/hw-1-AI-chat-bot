@@ -65,7 +65,6 @@ class ChatViewModel(
                 error = null
             )
         }
-        Log.w("EWQ", "sendMessage: ${_state.value.selectedModel}", )
         viewModelScope.launch {
             sendMessageUseCase(_state.value.selectedModel, currentInput)
                 .onSuccess { aiMessage ->

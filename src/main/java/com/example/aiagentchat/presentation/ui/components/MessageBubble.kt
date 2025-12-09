@@ -1,8 +1,5 @@
 package com.example.aiagentchat.presentation.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,11 +34,11 @@ import com.example.aiagentchat.domain.model.MessageMetrics
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 @Composable
 fun MessageBubble(
     message: Message,
-    showMetrics: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val isUser = message.isUser
@@ -109,14 +106,9 @@ fun MessageBubble(
             )
         }
         
-        // Metrics (only for AI messages when requested)
-        AnimatedVisibility(
-            visible = showMetrics && !isUser && message.metrics != null,
-            enter = fadeIn() + expandVertically()
-        ) {
-            message.metrics?.let { metrics ->
-                MetricsCard(metrics = metrics)
-            }
+        // Metrics - always show for AI messages with metrics data
+        if (!isUser && message.metrics != null) {
+            MetricsCard(metrics = message.metrics)
         }
     }
 }
@@ -138,12 +130,12 @@ private fun MetricsCard(
         ) {
             MetricItem(
                 icon = Icons.Default.AccessTime,
-                value = "${metrics.responseTimeMs}ms",
+                value = "${millisecondsToSeconds(metrics.responseTimeMs)}ms",
                 label = "Time"
             )
             MetricItem(
                 icon = Icons.Default.Token,
-                value = "${metrics.inputTokens}/${metrics.outputTokens}",
+                value = "INPUT ${metrics.inputTokens}/OUTPUT ${metrics.outputTokens}",
                 label = "Tokens"
             )
             MetricItem(
@@ -154,7 +146,9 @@ private fun MetricsCard(
         }
     }
 }
-
+fun millisecondsToSeconds(millis: Long): Double {
+    return millis / 1000.0
+}
 @Composable
 private fun MetricItem(
     icon: ImageVector,
