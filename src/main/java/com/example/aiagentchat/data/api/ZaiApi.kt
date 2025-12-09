@@ -14,7 +14,6 @@ interface ZaiApi {
     ): Response<ChatResponse>
     
     companion object {
-        // Z.ai API endpoint - замените на актуальный URL
         const val BASE_URL = "https://openrouter.ai/api/"
     }
 }
