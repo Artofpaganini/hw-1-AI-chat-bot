@@ -1,13 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">AI Agent Chat</string>
-    <string name="hint_message">Введите ваше сообщение...</string>
-    <string name="send">Отправить</string>
-    <string name="thinking">Думаю...</string>
-    <string name="error_message">Ошибка при отправке запроса</string>
-    <string name="empty_message">Пожалуйста, введите сообщение</string>
-    <string name="settings">Настройки</string>
-    <string name="select_provider">Выберите провайдера AI</string>
-    <string name="provider_selected">Выбран провайдер: %1$s</string>
+    <string name="app_name">AI Chat</string>
 </resources>
-
