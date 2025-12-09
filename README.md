@@ -1,101 +1,116 @@
-Build by Cursor
+# AI Agent Chat
 
-# AI Agent Chat - Android приложение
+Android приложение для сравнения AI-моделей (DeepSeek, Z.ai) с метриками производительности.
 
-Простое Android приложение на Kotlin для общения с AI агентом. Поддерживает несколько провайдеров, включая бесплатные варианты!
+## Архитектура
 
-## Возможности
+Проект использует **Clean Architecture** с разделением на слои:
 
-- 💬 Простой и интуитивный интерфейс чата
-- 🤖 Поддержка нескольких AI провайдеров:
-  - **Groq** (Llama 3.1) - **БЕСПЛАТНО**, быстрые ответы, требует бесплатный API ключ
-  - **Hugging Face** - бесплатно, без ключа
-  - **Ollama** - локально, без ключа
-  - **OpenAI** (GPT-3.5-turbo) - требует API ключ
-- 📱 Современный Material Design UI
-- 🔄 Асинхронная обработка запросов с использованием Kotlin Coroutines
-- 📝 История диалога сохраняется в рамках сессии
-- ⚙️ Переключение между провайдерами в настройках
-
-## Требования
-
-- Android Studio Hedgehog или новее
-- Android SDK 24 (Android 7.0) или выше
-- Для Groq: **бесплатный API ключ** (можно получить на https://console.groq.com/)
-- Для Hugging Face: ничего не требуется (работает бесплатно)
-- Для Ollama: установленный Ollama на локальной машине (см. инструкцию ниже)
-- Для OpenAI: API ключ (можно получить на https://platform.openai.com/api-keys)
-
-## Установка
-
-1. Откройте проект в Android Studio
-2. Синхронизируйте Gradle зависимости
-3. Запустите приложение на эмуляторе или реальном устройстве
-4. При первом запуске введите ваш **бесплатный Groq API ключ** (получите на https://console.groq.com/)
-
-## Использование
-
-1. Запустите приложение
-2. По умолчанию используется **Groq** (бесплатно, быстрые ответы)
-3. При первом запуске введите бесплатный API ключ Groq (получите на https://console.groq.com/)
-4. Для использования других провайдеров: откройте меню → Настройки → выберите провайдер
-5. Введите сообщение в поле ввода
-6. Нажмите кнопку "Отправить" или Enter
-7. Дождитесь ответа от AI агента
-
-### Использование Ollama (локально)
-
-1. Установите Ollama на ваш компьютер: https://ollama.ai
-2. Запустите Ollama и скачайте модель: `ollama pull llama2`
-3. В приложении выберите провайдер "Ollama (локально)"
-4. Для эмулятора Android: используйте адрес `http://10.0.2.2:11434/`
-5. Для реального устройства: используйте IP адрес вашего компьютера в локальной сети
+```
+app/
+├── data/                    # Data Layer
+│   ├── api/                 # API interfaces (DeepSeekApi, ZaiApi)
+│   ├── repository/          # Repository implementations
+│   ├── AuthManager.kt       # API keys management
+│   └── PricingConfig.kt     # Token pricing configuration
+├── domain/                  # Domain Layer
+│   ├── model/               # Business models (AiModel, Message, Metrics)
+│   ├── repository/          # Repository interfaces
+│   └── usecase/             # Use cases (SendMessage, SwitchModel, CompareMetrics)
+├── presentation/            # Presentation Layer
+│   ├── ui/                  # Compose UI components
+│   │   ├── components/      # Reusable components
+│   │   └── theme/           # Material 3 theme
+│   ├── ChatViewModel.kt     # ViewModel with UDF pattern
+│   └── ChatState.kt         # UI State & Events
+└── di/                      # Koin DI modules
+```
 
 ## Технологии
 
-- **Kotlin** - основной язык программирования
-- **Retrofit** - HTTP клиент для работы с API
-- **OkHttp** - HTTP клиент с логированием
-- **Gson** - JSON сериализация/десериализация
-- **Kotlin Coroutines** - асинхронное программирование
-- **ViewBinding** - привязка представлений
-- **Material Design** - современный UI
+- **Kotlin 2.1.0**
+- **Jetpack Compose** (BOM 2024.12.01)
+- **Material 3**
+- **Koin 4.0** (DI)
+- **Retrofit 2.11** + OkHttp 4.12
+- **Coroutines + Flow**
 
-## Настройка API провайдеров
+## Настройка API ключей
 
-### Groq (рекомендуется, используется по умолчанию)
-- ✅ **Бесплатно**
-- ✅ Очень быстрые ответы
-- ✅ Качественные модели (Llama 3.1)
-- 🔑 Требует бесплатный API ключ
+### Способ 1: local.properties (рекомендуется)
 
-Для использования:
-1. Зарегистрируйтесь на https://console.groq.com/ (бесплатно)
-2. Создайте API ключ в консоли
-3. При первом запуске приложения введите ваш ключ
-4. Готово! Наслаждайтесь быстрыми ответами от AI
+Добавьте в файл `local.properties`:
 
-### Hugging Face
-- ✅ **Бесплатно**
-- ✅ Не требует API ключа
-- ✅ Работает сразу после установки
-- ⚠️ Модель может загружаться при первом запросе (займет несколько секунд)
+```properties
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+ZAI_API_KEY=your_zai_api_key_here
+```
 
-### OpenAI
-- 💰 Требует оплату (но есть бесплатный кредит при регистрации)
-- 🔑 Требует API ключ
-- 🚀 Быстрые и качественные ответы
+### Способ 2: gradle.properties
 
-Для использования:
-1. Зарегистрируйтесь на https://platform.openai.com
-2. Создайте API ключ на https://platform.openai.com/api-keys
-3. В приложении: Меню → Настройки → выберите OpenAI → введите ключ
+Добавьте в `~/.gradle/gradle.properties`:
 
-### Ollama (локально)
-- ✅ **Полностью бесплатно**
-- ✅ Работает офлайн
-- ✅ Приватность (данные не отправляются в интернет)
-- ⚠️ Требует установку Ollama на компьютер
+```properties
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+ZAI_API_KEY=your_zai_api_key_here
+```
 
-**Важно:** API ключи хранятся только в памяти приложения и не сохраняются на устройстве. При перезапуске приложения потребуется ввести ключ снова (только для OpenAI).
+### Настройка цен на токены
 
+В `build.gradle.kts` настроены цены по умолчанию ($/1M tokens):
+
+```kotlin
+buildConfigField("Double", "DEEPSEEK_INPUT_PRICE", "0.14")
+buildConfigField("Double", "DEEPSEEK_OUTPUT_PRICE", "0.28")
+buildConfigField("Double", "ZAI_INPUT_PRICE", "0.10")
+buildConfigField("Double", "ZAI_OUTPUT_PRICE", "0.20")
+```
+
+Измените значения при необходимости.
+
+## Функциональность
+
+### Переключение моделей
+- Dropdown в AppBar для выбора между DeepSeek и Z.ai
+- История чата сохраняется при смене модели
+- Индикатор конфигурации API ключа для каждой модели
+
+### Метрики производительности
+Для каждого ответа отображаются:
+- ⏱️ **Время ответа** (мс)
+- 🪙 **Токены** (input/output)
+- 💰 **Стоимость** (USD)
+
+### Сравнение моделей
+При отправке одного запроса обеим моделям отображается карточка сравнения:
+- Разница во времени ответа
+- Разница в количестве токенов
+- Разница в стоимости
+
+## Сборка
+
+```bash
+./gradlew assembleDebug
+```
+
+## Получение API ключей
+
+- **DeepSeek**: https://platform.deepseek.com/
+- **Z.ai**: https://z.ai/ (замените BASE_URL в `ZaiApi.kt` на актуальный)
+
+## Тестирование
+
+Для unit-тестов используется `FakeMetricsSource`:
+
+```kotlin
+// В тестах
+val fakeMetrics = FakeMetricsSource.createFakeMetrics(
+    responseTimeMs = 500L,
+    inputTokens = 100,
+    outputTokens = 200
+)
+```
+
+## License
+
+MIT

@@ -15,5 +15,3 @@ referal
 .cxx
 app/src/main/assets/version.properties
 .kotlin/
-app/src/main/assets/remote-config/remote-config.json
-app/src/main/assets/translations/ApplicationTranslations.json
