@@ -1,12 +1,12 @@
 package com.example.aiagentchat.presentation
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.aiagentchat.domain.model.AiModel
 import com.example.aiagentchat.domain.model.Message
 import com.example.aiagentchat.domain.repository.AiModelRepository
 import com.example.aiagentchat.domain.usecase.CompareModelMetricsUseCase
+import com.example.aiagentchat.domain.usecase.ExportChatHistoryUseCase
 import com.example.aiagentchat.domain.usecase.SendMessageUseCase
 import com.example.aiagentchat.domain.usecase.SwitchAiModelUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +19,7 @@ class ChatViewModel(
     private val sendMessageUseCase: SendMessageUseCase,
     private val switchAiModelUseCase: SwitchAiModelUseCase,
     private val compareModelMetricsUseCase: CompareModelMetricsUseCase,
+    private val exportChatHistoryUseCase: ExportChatHistoryUseCase,
     private val aiModelRepository: AiModelRepository
 ) : ViewModel() {
     
@@ -36,6 +37,8 @@ class ChatViewModel(
             is ChatEvent.OnModelSelected -> selectModel(event.model)
             is ChatEvent.OnDismissError -> dismissError()
             is ChatEvent.OnClearChat -> clearChat()
+            is ChatEvent.OnExportChat -> exportChat()
+            is ChatEvent.OnDismissExport -> dismissExport()
         }
     }
     
@@ -52,6 +55,7 @@ class ChatViewModel(
         val currentInput = _state.value.currentInput.trim()
         if (currentInput.isBlank()) return
         
+        val currentMessages = _state.value.messages
         val userMessage = Message(
             content = currentInput,
             isUser = true
@@ -66,7 +70,12 @@ class ChatViewModel(
             )
         }
         viewModelScope.launch {
-            sendMessageUseCase(_state.value.selectedModel, currentInput)
+            val prompt = if (currentInput.equals("Аналитика", ignoreCase = true)) {
+                buildAnalyticsPrompt(currentMessages)
+            } else {
+                currentInput
+            }
+            sendMessageUseCase(_state.value.selectedModel, prompt)
                 .onSuccess { aiMessage ->
                     _state.update { state ->
                         val updatedMessages = state.messages + aiMessage
@@ -89,6 +98,31 @@ class ChatViewModel(
         }
     }
     
+    private fun buildAnalyticsPrompt(messages: List<Message>): String {
+        val aiResponses = messages.filter { !it.isUser }.takeLast(2)
+        if (aiResponses.size < 2) {
+            return "Недостаточно ответов для аналитики. Нужно минимум 2 ответа от AI."
+        }
+        val prompt = buildString {
+            appendLine("Ты Аналитик уровня - мастер. Проанализируй последние 2 ответа AI и дай краткую аналитику.")
+            appendLine()
+            appendLine("Для каждого ответа укажи:")
+            appendLine("1. Плюсы ответа")
+            appendLine("2. Минусы ответа")
+            appendLine("3. Результативность ответа (оцени по шкале от 1 до 10)")
+            appendLine()
+            aiResponses.forEachIndexed { index, message ->
+                appendLine("=== Ответ ${index + 1} ===")
+                appendLine("Модель: ${message.model?.displayName ?: "Неизвестно"}")
+                appendLine("Содержание:")
+                appendLine(message.content)
+                appendLine()
+            }
+            appendLine("Дай структурированную аналитику для каждого ответа.")
+        }
+        return prompt.toString()
+    }
+    
     private fun selectModel(model: AiModel) {
         switchAiModelUseCase(model)
             .onSuccess { selectedModel ->
@@ -105,6 +139,22 @@ class ChatViewModel(
     
     private fun clearChat() {
         _state.update { it.copy(messages = emptyList(), metricsComparison = null) }
+    }
+    
+    private fun exportChat() {
+        val currentState = _state.value
+        if (currentState.messages.isEmpty()) return
+        
+        val toonExport = exportChatHistoryUseCase(
+            messages = currentState.messages,
+            comparison = currentState.metricsComparison
+        )
+        
+        _state.update { it.copy(exportedToon = toonExport) }
+    }
+    
+    private fun dismissExport() {
+        _state.update { it.copy(exportedToon = null) }
     }
 }
 

@@ -6,6 +6,7 @@ import com.example.aiagentchat.data.repository.MetricsRepositoryImpl
 import com.example.aiagentchat.domain.repository.AiModelRepository
 import com.example.aiagentchat.domain.repository.MetricsRepository
 import com.example.aiagentchat.domain.usecase.CompareModelMetricsUseCase
+import com.example.aiagentchat.domain.usecase.ExportChatHistoryUseCase
 import com.example.aiagentchat.domain.usecase.SendMessageUseCase
 import com.example.aiagentchat.domain.usecase.SwitchAiModelUseCase
 import com.example.aiagentchat.presentation.ChatViewModel
@@ -22,6 +23,7 @@ val appModule = module {
     factory { SendMessageUseCase(get(), get()) }
     factory { SwitchAiModelUseCase(get()) }
     factory { CompareModelMetricsUseCase() }
+    factory { ExportChatHistoryUseCase() }
     
     // Presentation
     viewModel { 
@@ -29,6 +31,7 @@ val appModule = module {
             sendMessageUseCase = get(),
             switchAiModelUseCase = get(),
             compareModelMetricsUseCase = get(),
+            exportChatHistoryUseCase = get(),
             aiModelRepository = get()
         )
     }

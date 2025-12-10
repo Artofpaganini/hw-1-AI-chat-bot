@@ -34,7 +34,6 @@ import com.example.aiagentchat.domain.model.MessageMetrics
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 
 @Composable
 fun MessageBubble(
@@ -130,12 +129,12 @@ private fun MetricsCard(
         ) {
             MetricItem(
                 icon = Icons.Default.AccessTime,
-                value = "${millisecondsToSeconds(metrics.responseTimeMs)}ms",
+                value = formatResponseTime(metrics.responseTimeMs),
                 label = "Time"
             )
             MetricItem(
                 icon = Icons.Default.Token,
-                value = "INPUT ${metrics.inputTokens}/OUTPUT ${metrics.outputTokens}",
+                value = "IN:${metrics.inputTokens} OUT:${metrics.outputTokens}",
                 label = "Tokens"
             )
             MetricItem(
@@ -146,8 +145,12 @@ private fun MetricsCard(
         }
     }
 }
-fun millisecondsToSeconds(millis: Long): Double {
-    return millis / 1000.0
+private fun formatResponseTime(millis: Long): String {
+    return if (millis >= 1000) {
+        String.format(Locale.US, "%.2fs", millis / 1000.0)
+    } else {
+        "${millis}ms"
+    }
 }
 @Composable
 private fun MetricItem(
