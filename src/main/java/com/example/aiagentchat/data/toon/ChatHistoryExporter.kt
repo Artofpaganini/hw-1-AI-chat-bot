@@ -59,15 +59,6 @@ object ChatHistoryExporter {
             )
         }
         
-        comparison.zaiMessage?.metrics?.let { m ->
-            compMap["zai"] = mapOf(
-                "responseTimeMs" to m.responseTimeMs,
-                "inputTokens" to m.inputTokens,
-                "outputTokens" to m.outputTokens,
-                "costUsd" to m.costUsd
-            )
-        }
-        
         comparison.timeDifferenceMs?.let { compMap["timeDiffMs"] = it }
         comparison.costDifferenceUsd?.let { compMap["costDiffUsd"] = it }
         comparison.tokensDifference?.let { compMap["tokensDiff"] = it }

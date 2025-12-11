@@ -30,8 +30,8 @@ object ApiClient {
         createRetrofit(DeepSeekApi.BASE_URL).create(DeepSeekApi::class.java)
     }
 
-    val zaiApi: ZaiApi by lazy {
-        createRetrofit(ZaiApi.BASE_URL).create(ZaiApi::class.java)
+    val openRouterApi: OpenRouterApi by lazy {
+        createRetrofit(OpenRouterApi.BASE_URL).create(OpenRouterApi::class.java)
     }
 }
 

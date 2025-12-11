@@ -9,17 +9,34 @@ sealed interface AiModel {
         override val modelId: String = "deepseek-chat"
     }
 
-    data object Zai : AiModel {
-        override val displayName: String = "Z.ai"
-        override val modelId: String = "z-ai/glm-4.6v"
+    data object Claude35Sonnet : AiModel {
+        override val displayName: String = "Claude 3.5 Sonnet"
+        override val modelId: String = "anthropic/claude-3.5-sonnet"
+    }
+
+    data object Gpt4oMini : AiModel {
+        override val displayName: String = "GPT-4o Mini"
+        override val modelId: String = "openai/gpt-4o-mini"
+    }
+
+    data object GeminiPro15 : AiModel {
+        override val displayName: String = "Gemini Pro 1.5"
+        override val modelId: String = "google/gemini-pro-1.5"
     }
 
     companion object {
-        val entries: List<AiModel> = listOf(DeepSeek, Zai)
+        val entries: List<AiModel> = listOf(
+            DeepSeek,
+            Claude35Sonnet,
+            Gpt4oMini,
+            GeminiPro15
+        )
         
         fun fromDisplayName(name: String): AiModel = when (name) {
             DeepSeek.displayName -> DeepSeek
-            Zai.displayName -> Zai
+            Claude35Sonnet.displayName -> Claude35Sonnet
+            Gpt4oMini.displayName -> Gpt4oMini
+            GeminiPro15.displayName -> GeminiPro15
             else -> DeepSeek
         }
     }
