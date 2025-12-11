@@ -8,7 +8,8 @@ data class Message(
     val isUser: Boolean,
     val model: AiModel? = null,
     val metrics: MessageMetrics? = null,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val isCompressed: Boolean = false
 )
 
 data class MessageMetrics(

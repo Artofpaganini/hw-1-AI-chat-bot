@@ -26,10 +26,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.aiagentchat.domain.model.AiModel
 import com.example.aiagentchat.domain.usecase.MetricsComparison
 import java.util.Locale
-import kotlin.math.abs
 
 @Composable
 fun MetricsComparisonCard(
@@ -85,28 +83,11 @@ fun MetricsComparisonCard(
                     // Comparison rows
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.Center
                     ) {
                         ComparisonColumn(
-                            modelName = AiModel.DeepSeek.displayName,
+                            modelName = comp.deepSeekMessage?.model?.displayName ?: "Unknown",
                             metrics = comp.deepSeekMessage?.metrics?.let {
-                                ComparisonMetrics(
-                                    time = "${it.responseTimeMs}ms",
-                                    tokens = "${it.inputTokens + it.outputTokens}",
-                                    cost = String.format(Locale.US, "$%.6f", it.costUsd)
-                                )
-                            }
-                        )
-                        
-                        DifferenceColumn(
-                            timeDiff = comp.timeDifferenceMs,
-                            tokensDiff = comp.tokensDifference,
-                            costDiff = comp.costDifferenceUsd
-                        )
-                        
-                        ComparisonColumn(
-                            modelName = AiModel.Zai.displayName,
-                            metrics = comp.zaiMessage?.metrics?.let {
                                 ComparisonMetrics(
                                     time = "${it.responseTimeMs}ms",
                                     tokens = "${it.inputTokens + it.outputTokens}",
@@ -159,30 +140,6 @@ private fun ComparisonColumn(
     }
 }
 
-@Composable
-private fun DifferenceColumn(
-    timeDiff: Long?,
-    tokensDiff: Int?,
-    costDiff: Double?,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = modifier.width(80.dp)
-    ) {
-        Text(
-            text = "Δ",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.outline
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        DiffValue(value = timeDiff?.let { "${formatDiff(it)}ms" })
-        DiffValue(value = tokensDiff?.let { formatDiff(it.toLong()) })
-        DiffValue(value = costDiff?.let { String.format(Locale.US, "%s$%.6f", if (it >= 0) "+" else "", it) })
-    }
-}
 
 @Composable
 private fun MetricRow(label: String, value: String) {
@@ -204,21 +161,4 @@ private fun MetricRow(label: String, value: String) {
     }
 }
 
-@Composable
-private fun DiffValue(value: String?) {
-    Text(
-        text = value ?: "—",
-        style = MaterialTheme.typography.bodySmall,
-        color = if (value != null) {
-            MaterialTheme.colorScheme.tertiary
-        } else {
-            MaterialTheme.colorScheme.outline
-        },
-        modifier = Modifier.padding(vertical = 2.dp)
-    )
-}
-
-private fun formatDiff(value: Long): String {
-    return if (value >= 0) "+$value" else "$value"
-}
 

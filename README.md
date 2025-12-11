@@ -1,6 +1,6 @@
 # AI Agent Chat
 
-Android приложение для сравнения AI-моделей (DeepSeek, Z.ai) с метриками производительности.
+Android приложение для сравнения AI-моделей (DeepSeek, Claude 3.5 Sonnet, GPT-4o Mini, Gemini Pro 1.5) с метриками производительности.
 
 ## Архитектура
 
@@ -9,7 +9,7 @@ Android приложение для сравнения AI-моделей (DeepSe
 ```
 app/
 ├── data/                    # Data Layer
-│   ├── api/                 # API interfaces (DeepSeekApi, ZaiApi)
+│   ├── api/                 # API interfaces (DeepSeekApi, OpenRouterApi)
 │   ├── repository/          # Repository implementations
 │   ├── AuthManager.kt       # API keys management
 │   └── PricingConfig.kt     # Token pricing configuration
@@ -43,8 +43,10 @@ app/
 
 ```properties
 DEEPSEEK_API_KEY=your_deepseek_api_key_here
-ZAI_API_KEY=your_zai_api_key_here
+OPENROUTER_API_KEY=your_openrouter_api_key_here
 ```
+
+**Важно:** Для моделей через OpenRouter (Claude 3.5 Sonnet, GPT-4o Mini, Gemini Pro 1.5) используется один API ключ `OPENROUTER_API_KEY`.
 
 ### Способ 2: gradle.properties
 
@@ -52,7 +54,7 @@ ZAI_API_KEY=your_zai_api_key_here
 
 ```properties
 DEEPSEEK_API_KEY=your_deepseek_api_key_here
-ZAI_API_KEY=your_zai_api_key_here
+OPENROUTER_API_KEY=your_openrouter_api_key_here
 ```
 
 ### Настройка цен на токены
@@ -60,10 +62,18 @@ ZAI_API_KEY=your_zai_api_key_here
 В `build.gradle.kts` настроены цены по умолчанию ($/1M tokens):
 
 ```kotlin
+// DeepSeek
 buildConfigField("Double", "DEEPSEEK_INPUT_PRICE", "0.14")
 buildConfigField("Double", "DEEPSEEK_OUTPUT_PRICE", "0.28")
-buildConfigField("Double", "ZAI_INPUT_PRICE", "0.10")
-buildConfigField("Double", "ZAI_OUTPUT_PRICE", "0.20")
+// Claude 3.5 Sonnet (через OpenRouter)
+buildConfigField("Double", "CLAUDE_35_SONNET_INPUT_PRICE", "3.00")
+buildConfigField("Double", "CLAUDE_35_SONNET_OUTPUT_PRICE", "15.00")
+// GPT-4o Mini (через OpenRouter)
+buildConfigField("Double", "GPT_4O_MINI_INPUT_PRICE", "0.15")
+buildConfigField("Double", "GPT_4O_MINI_OUTPUT_PRICE", "0.60")
+// Gemini Pro 1.5 (через OpenRouter)
+buildConfigField("Double", "GEMINI_PRO_15_INPUT_PRICE", "1.25")
+buildConfigField("Double", "GEMINI_PRO_15_OUTPUT_PRICE", "5.00")
 ```
 
 Измените значения при необходимости.
@@ -71,7 +81,11 @@ buildConfigField("Double", "ZAI_OUTPUT_PRICE", "0.20")
 ## Функциональность
 
 ### Переключение моделей
-- Dropdown в AppBar для выбора между DeepSeek и Z.ai
+- Dropdown в AppBar для выбора между доступными моделями:
+  - **DeepSeek** - прямое API
+  - **Claude 3.5 Sonnet** - через OpenRouter (Anthropic)
+  - **GPT-4o Mini** - через OpenRouter (OpenAI)
+  - **Gemini Pro 1.5** - через OpenRouter (Google)
 - История чата сохраняется при смене модели
 - Индикатор конфигурации API ключа для каждой модели
 
@@ -96,7 +110,10 @@ buildConfigField("Double", "ZAI_OUTPUT_PRICE", "0.20")
 ## Получение API ключей
 
 - **DeepSeek**: https://platform.deepseek.com/
-- **Z.ai**: https://z.ai/ (замените BASE_URL в `ZaiApi.kt` на актуальный)
+- **OpenRouter** (для Claude 3.5 Sonnet, GPT-4o Mini, Gemini Pro 1.5): https://openrouter.ai/
+  - Создайте аккаунт на OpenRouter
+  - Получите API ключ в настройках
+  - Пополните баланс для использования моделей
 
 ## Тестирование
 

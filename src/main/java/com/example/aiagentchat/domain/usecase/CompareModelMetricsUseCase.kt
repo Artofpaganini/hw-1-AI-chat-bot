@@ -6,13 +6,12 @@ import com.example.aiagentchat.domain.model.Message
 data class MetricsComparison(
     val prompt: String,
     val deepSeekMessage: Message?,
-    val zaiMessage: Message?,
     val timeDifferenceMs: Long?,
     val costDifferenceUsd: Double?,
     val tokensDifference: Int?
 ) {
     val isComplete: Boolean
-        get() = deepSeekMessage != null && zaiMessage != null
+        get() = deepSeekMessage != null
 }
 
 class CompareModelMetricsUseCase {
@@ -28,30 +27,15 @@ class CompareModelMetricsUseCase {
         }
         
         val deepSeekResponse = responses.find { it.model is AiModel.DeepSeek }
-        val zaiResponse = responses.find { it.model is AiModel.Zai }
         
-        if (deepSeekResponse == null && zaiResponse == null) return null
-        
-        val timeDiff = if (deepSeekResponse?.metrics != null && zaiResponse?.metrics != null) {
-            deepSeekResponse.metrics.responseTimeMs - zaiResponse.metrics.responseTimeMs
-        } else null
-        
-        val costDiff = if (deepSeekResponse?.metrics != null && zaiResponse?.metrics != null) {
-            deepSeekResponse.metrics.costUsd - zaiResponse.metrics.costUsd
-        } else null
-        
-        val tokensDiff = if (deepSeekResponse?.metrics != null && zaiResponse?.metrics != null) {
-            (deepSeekResponse.metrics.inputTokens + deepSeekResponse.metrics.outputTokens) -
-            (zaiResponse.metrics.inputTokens + zaiResponse.metrics.outputTokens)
-        } else null
+        if (deepSeekResponse == null) return null
         
         return MetricsComparison(
             prompt = prompt,
             deepSeekMessage = deepSeekResponse,
-            zaiMessage = zaiResponse,
-            timeDifferenceMs = timeDiff,
-            costDifferenceUsd = costDiff,
-            tokensDifference = tokensDiff
+            timeDifferenceMs = null,
+            costDifferenceUsd = null,
+            tokensDifference = null
         )
     }
 }

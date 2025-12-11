@@ -70,55 +70,203 @@ class ChatViewModel(
             )
         }
         viewModelScope.launch {
-            val prompt = if (currentInput.equals("Аналитика", ignoreCase = true)) {
-                buildAnalyticsPrompt(currentMessages)
-            } else {
-                currentInput
+            when {
+                currentInput.equals("Сжатие", ignoreCase = true) -> {
+                    compressChatHistory(currentMessages)
+                }
+                currentInput.equals("Аналитика", ignoreCase = true) -> {
+                    val prompt = buildAnalyticsPrompt(currentMessages)
+                    sendMessageUseCase(_state.value.selectedModel, prompt)
+                        .onSuccess { aiMessage ->
+                            _state.update { state ->
+                                val updatedMessages = state.messages + aiMessage
+                                val comparison = compareModelMetricsUseCase(updatedMessages, currentInput)
+                                state.copy(
+                                    messages = updatedMessages,
+                                    isLoading = false,
+                                    metricsComparison = comparison
+                                )
+                            }
+                        }
+                        .onFailure { error ->
+                            _state.update { state ->
+                                state.copy(
+                                    isLoading = false,
+                                    error = error.message ?: "Unknown error occurred"
+                                )
+                            }
+                        }
+                }
+                else -> {
+                    sendMessageUseCase(_state.value.selectedModel, currentInput)
+                        .onSuccess { aiMessage ->
+                            _state.update { state ->
+                                val updatedMessages = state.messages + aiMessage
+                                val comparison = compareModelMetricsUseCase(updatedMessages, currentInput)
+                                state.copy(
+                                    messages = updatedMessages,
+                                    isLoading = false,
+                                    metricsComparison = comparison
+                                )
+                            }
+                        }
+                        .onFailure { error ->
+                            _state.update { state ->
+                                state.copy(
+                                    isLoading = false,
+                                    error = error.message ?: "Unknown error occurred"
+                                )
+                            }
+                        }
+                }
             }
-            sendMessageUseCase(_state.value.selectedModel, prompt)
-                .onSuccess { aiMessage ->
-                    _state.update { state ->
-                        val updatedMessages = state.messages + aiMessage
-                        val comparison = compareModelMetricsUseCase(updatedMessages, currentInput)
-                        state.copy(
-                            messages = updatedMessages,
-                            isLoading = false,
-                            metricsComparison = comparison
-                        )
-                    }
+        }
+    }
+    
+    private suspend fun compressChatHistory(messages: List<Message>) {
+        val messagesToCompress = messages.filter { !it.isCompressed }
+        if (messagesToCompress.isEmpty()) {
+            _state.update { state ->
+                state.copy(
+                    isLoading = false,
+                    error = "Нет сообщений для сжатия"
+                )
+            }
+            return
+        }
+        val chunks = messagesToCompress.chunked(10)
+        val fullChunks = chunks.filter { it.size == 10 }
+        if (fullChunks.isEmpty()) {
+            _state.update { state ->
+                state.copy(
+                    isLoading = false,
+                    error = "Недостаточно сообщений для сжатия. Нужно минимум 10 сообщений."
+                )
+            }
+            return
+        }
+        val compressedMessages = mutableListOf<Message>()
+        for (chunk in fullChunks) {
+            val compressionPrompt = buildCompressionPrompt(chunk)
+            sendMessageUseCase(_state.value.selectedModel, compressionPrompt)
+                .onSuccess { summaryMessage ->
+                    val compressedMessage = summaryMessage.copy(isCompressed = true)
+                    compressedMessages.add(compressedMessage)
                 }
                 .onFailure { error ->
                     _state.update { state ->
                         state.copy(
                             isLoading = false,
-                            error = error.message ?: "Unknown error occurred"
+                            error = "Ошибка при сжатии: ${error.message}"
                         )
                     }
+                    return
                 }
+        }
+        _state.update { state ->
+            val existingMessages = state.messages
+            val newMessages = existingMessages + compressedMessages
+            state.copy(
+                messages = newMessages,
+                isLoading = false,
+                error = null
+            )
         }
     }
     
+    private fun buildCompressionPrompt(messages: List<Message>): String {
+        val prompt = buildString {
+            appendLine("Ты помощник для сжатия истории диалога. Создай краткое резюме следующего диалога, сохраняя ключевые моменты и контекст.")
+            appendLine()
+            appendLine("Диалог:")
+            messages.forEach { message ->
+                val role = if (message.isUser) "Пользователь" else "AI (${message.model?.displayName ?: "Неизвестно"})"
+                appendLine("$role: ${message.content}")
+            }
+            appendLine()
+            appendLine("Создай краткое резюме этого диалога, сохраняя важную информацию и контекст.")
+        }
+        return prompt.toString()
+    }
+    
     private fun buildAnalyticsPrompt(messages: List<Message>): String {
-        val aiResponses = messages.filter { !it.isUser }.takeLast(2)
-        if (aiResponses.size < 2) {
-            return "Недостаточно ответов для аналитики. Нужно минимум 2 ответа от AI."
+        val compressionMessageIndex = messages.indexOfFirst { 
+            it.isUser && it.content.equals("Сжатие", ignoreCase = true) 
+        }
+        if (compressionMessageIndex == -1) {
+            return "Не найдено сообщение 'Сжатие' в истории. Аналитика доступна только после выполнения сжатия."
+        }
+        val messagesBeforeCompression = messages.take(compressionMessageIndex)
+        val messagesAfterCompression = messages.drop(compressionMessageIndex + 1)
+        val aiResponsesBefore = messagesBeforeCompression.filter { !it.isUser && !it.isCompressed }
+        val aiResponsesAfter = messagesAfterCompression.filter { !it.isUser && !it.isCompressed }
+        if (aiResponsesBefore.isEmpty() && aiResponsesAfter.isEmpty()) {
+            return "Недостаточно ответов для аналитики. Нужны ответы до и после сжатия."
         }
         val prompt = buildString {
-            appendLine("Ты Аналитик уровня - мастер. Проанализируй последние 2 ответа AI и дай краткую аналитику.")
+            appendLine("Ты Аналитик уровня - мастер. Проанализируй ответы AI до и после сжатия истории диалога.")
             appendLine()
-            appendLine("Для каждого ответа укажи:")
-            appendLine("1. Плюсы ответа")
-            appendLine("2. Минусы ответа")
-            appendLine("3. Результативность ответа (оцени по шкале от 1 до 10)")
+            appendLine("В истории диалога было выполнено сжатие. Проанализируй:")
+            appendLine("1. Результативность ответов ДО сжатия")
+            appendLine("2. Результативность ответов ПОСЛЕ сжатия")
+            appendLine("3. Отличия между ответами до и после сжатия")
             appendLine()
-            aiResponses.forEachIndexed { index, message ->
-                appendLine("=== Ответ ${index + 1} ===")
-                appendLine("Модель: ${message.model?.displayName ?: "Неизвестно"}")
-                appendLine("Содержание:")
-                appendLine(message.content)
-                appendLine()
+            if (aiResponsesBefore.isNotEmpty()) {
+                appendLine("=== ОТВЕТЫ ДО СЖАТИЯ ===")
+                aiResponsesBefore.forEachIndexed { index, message ->
+                    appendLine("--- Ответ ${index + 1} ---")
+                    appendLine("Модель: ${message.model?.displayName ?: "Неизвестно"}")
+                    if (message.metrics != null) {
+                        appendLine("Метрики:")
+                        appendLine("  - Входные токены: ${message.metrics.inputTokens}")
+                        appendLine("  - Выходные токены: ${message.metrics.outputTokens}")
+                        appendLine("  - Всего токенов: ${message.metrics.inputTokens + message.metrics.outputTokens}")
+                        appendLine("  - Стоимость: $${String.format("%.6f", message.metrics.costUsd)}")
+                        appendLine("  - Время ответа: ${message.metrics.responseTimeMs}ms")
+                    }
+                    appendLine("Содержание:")
+                    appendLine(message.content)
+                    appendLine()
+                }
             }
-            appendLine("Дай структурированную аналитику для каждого ответа.")
+            if (aiResponsesAfter.isNotEmpty()) {
+                appendLine("=== ОТВЕТЫ ПОСЛЕ СЖАТИЯ ===")
+                aiResponsesAfter.forEachIndexed { index, message ->
+                    appendLine("--- Ответ ${index + 1} ---")
+                    appendLine("Модель: ${message.model?.displayName ?: "Неизвестно"}")
+                    if (message.metrics != null) {
+                        appendLine("Метрики:")
+                        appendLine("  - Входные токены: ${message.metrics.inputTokens}")
+                        appendLine("  - Выходные токены: ${message.metrics.outputTokens}")
+                        appendLine("  - Всего токенов: ${message.metrics.inputTokens + message.metrics.outputTokens}")
+                        appendLine("  - Стоимость: $${String.format("%.6f", message.metrics.costUsd)}")
+                        appendLine("  - Время ответа: ${message.metrics.responseTimeMs}ms")
+                    }
+                    appendLine("Содержание:")
+                    appendLine(message.content)
+                    appendLine()
+                }
+            }
+            appendLine("=== ЗАДАНИЕ ДЛЯ АНАЛИТИКИ ===")
+            appendLine("Дай детальную аналитику:")
+            appendLine()
+            appendLine("1. РЕЗУЛЬТАТИВНОСТЬ ОТВЕТОВ ДО СЖАТИЯ:")
+            appendLine("   - Оцени результативность каждого ответа (шкала 1-10)")
+            appendLine("   - Плюсы и минусы ответов")
+            appendLine("   - Качество ответов (детальность, точность, полезность)")
+            appendLine()
+            appendLine("2. РЕЗУЛЬТАТИВНОСТЬ ОТВЕТОВ ПОСЛЕ СЖАТИЯ:")
+            appendLine("   - Оцени результативность каждого ответа (шкала 1-10)")
+            appendLine("   - Плюсы и минусы ответов")
+            appendLine("   - Качество ответов (детальность, точность, полезность)")
+            appendLine()
+            appendLine("3. ОТЛИЧИЯ МЕЖДУ ОТВЕТАМИ ДО И ПОСЛЕ СЖАТИЯ:")
+            appendLine("   - Как изменилось качество ответов?")
+            appendLine("   - Как изменилось использование токенов?")
+            appendLine("   - Как изменилась скорость ответов?")
+            appendLine("   - Как изменилась стоимость?")
+            appendLine("   - Влияние сжатия на контекст и понимание")
+            appendLine("   - Общие выводы и рекомендации")
         }
         return prompt.toString()
     }

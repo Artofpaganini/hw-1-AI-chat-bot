@@ -29,18 +29,26 @@ android {
 
         // API Keys - разработчик добавляет ключи в local.properties:
         // DEEPSEEK_API_KEY=your_key_here
-        // ZAI_API_KEY=your_key_here
+        // OPENROUTER_API_KEY=your_key_here
         val deepSeekKey = localProperties.getProperty("DEEPSEEK_API_KEY") ?: ""
-        val zaiKey = localProperties.getProperty("ZAI_API_KEY") ?: ""
+        val openRouterKey = localProperties.getProperty("OPENROUTER_API_KEY") ?: ""
         
         buildConfigField("String", "DEEPSEEK_API_KEY", "\"$deepSeekKey\"")
-        buildConfigField("String", "ZAI_API_KEY", "\"$zaiKey\"")
+        buildConfigField("String", "OPENROUTER_API_KEY", "\"$openRouterKey\"")
         
         // Pricing per 1M tokens (в USD)
+        // DeepSeek
         buildConfigField("Double", "DEEPSEEK_INPUT_PRICE", "0.14")
         buildConfigField("Double", "DEEPSEEK_OUTPUT_PRICE", "0.28")
-        buildConfigField("Double", "ZAI_INPUT_PRICE", "0.10")
-        buildConfigField("Double", "ZAI_OUTPUT_PRICE", "0.20")
+        // Claude 3.5 Sonnet (через OpenRouter)
+        buildConfigField("Double", "CLAUDE_35_SONNET_INPUT_PRICE", "3.00")
+        buildConfigField("Double", "CLAUDE_35_SONNET_OUTPUT_PRICE", "15.00")
+        // GPT-4o Mini (через OpenRouter)
+        buildConfigField("Double", "GPT_4O_MINI_INPUT_PRICE", "0.15")
+        buildConfigField("Double", "GPT_4O_MINI_OUTPUT_PRICE", "0.60")
+        // Gemini Pro 1.5 (через OpenRouter)
+        buildConfigField("Double", "GEMINI_PRO_15_INPUT_PRICE", "1.25")
+        buildConfigField("Double", "GEMINI_PRO_15_OUTPUT_PRICE", "5.00")
     }
 
     buildTypes {

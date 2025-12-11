@@ -7,7 +7,9 @@ class AuthManager {
     fun getApiKey(model: AiModel): String {
         return when (model) {
             is AiModel.DeepSeek -> getDeepSeekKey()
-            is AiModel.Zai -> getZaiKey()
+            is AiModel.Claude35Sonnet,
+            is AiModel.Gpt4oMini,
+            is AiModel.GeminiPro15 -> getOpenRouterKey()
         }
     }
     
@@ -15,8 +17,8 @@ class AuthManager {
         return BuildConfig.DEEPSEEK_API_KEY
     }
     
-    fun getZaiKey(): String {
-        return BuildConfig.ZAI_API_KEY
+    fun getOpenRouterKey(): String {
+        return BuildConfig.OPENROUTER_API_KEY
     }
     
     fun isKeyConfigured(model: AiModel): Boolean {
