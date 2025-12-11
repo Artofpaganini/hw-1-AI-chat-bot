@@ -176,7 +176,7 @@ class ChatViewModel(
     
     private fun buildCompressionPrompt(messages: List<Message>): String {
         val prompt = buildString {
-            appendLine("Ты помощник для сжатия истории диалога. Создай краткое резюме следующего диалога, сохраняя ключевые моменты и контекст.")
+            appendLine("Ты помощник для сжатия истории диалога. Дай краткое описание(не больше 1 предложения) по каждому ответу из истории, сохраняя ключевые моменты и контекст.")
             appendLine()
             appendLine("Диалог:")
             messages.forEach { message ->
@@ -252,12 +252,12 @@ class ChatViewModel(
             appendLine()
             appendLine("1. РЕЗУЛЬТАТИВНОСТЬ ОТВЕТОВ ДО СЖАТИЯ:")
             appendLine("   - Оцени результативность каждого ответа (шкала 1-10)")
-            appendLine("   - Плюсы и минусы ответов")
+            appendLine("   - Общее количество input/ouput токенов и стоимость")
             appendLine("   - Качество ответов (детальность, точность, полезность)")
             appendLine()
             appendLine("2. РЕЗУЛЬТАТИВНОСТЬ ОТВЕТОВ ПОСЛЕ СЖАТИЯ:")
             appendLine("   - Оцени результативность каждого ответа (шкала 1-10)")
-            appendLine("   - Плюсы и минусы ответов")
+            appendLine("   - Общее количество input/ouput токенов и стоимость")
             appendLine("   - Качество ответов (детальность, точность, полезность)")
             appendLine()
             appendLine("3. ОТЛИЧИЯ МЕЖДУ ОТВЕТАМИ ДО И ПОСЛЕ СЖАТИЯ:")
