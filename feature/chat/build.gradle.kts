@@ -40,6 +40,7 @@ dependencies {
     implementation(libs.bundles.network)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.navigation.compose)
+    implementation(libs.gson)
 
     testImplementation(libs.bundles.junit)
     testImplementation(libs.mockk)

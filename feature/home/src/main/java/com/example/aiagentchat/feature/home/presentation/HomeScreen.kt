@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -62,6 +63,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import com.example.aiagentchat.feature.chat.presentation.chat.ChatEvent
 import com.example.aiagentchat.feature.chat.presentation.chat.ChatViewModel
+import com.example.aiagentchat.feature.chat.domain.model.ContextSummary
 import com.example.aiagentchat.feature.chat.presentation.components.ChatInput
 import com.example.aiagentchat.feature.chat.presentation.components.MessageBubble
 import com.example.aiagentchat.feature.chat.presentation.components.MetricsComparisonCard
@@ -202,11 +204,316 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
+                if (state.sessionContext.userSummaries.isNotEmpty() || state.sessionContext.aiSummaries.isNotEmpty()) {
+                    item {
+                        ContextSummarySection(
+                            userSummaries = state.sessionContext.userSummaries,
+                            aiSummaries = state.sessionContext.aiSummaries
+                        )
+                    }
+                }
                 items(
                     items = state.messages,
                     key = { it.id }
                 ) { message ->
                     MessageBubble(message = message)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContextSummarySection(
+    userSummaries: List<ContextSummary>,
+    aiSummaries: List<ContextSummary>
+) {
+    val summaryPairs = remember(userSummaries, aiSummaries) {
+        buildSummaryPairs(userSummaries, aiSummaries)
+    }
+    
+    val hasAnySummaries = userSummaries.isNotEmpty() || aiSummaries.isNotEmpty()
+    if (!hasAnySummaries) return
+    
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "История обсуждений",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(bottom = 4.dp)
+        )
+        
+        if (summaryPairs.isNotEmpty()) {
+            summaryPairs.forEach { pair ->
+                AnimatedVisibility(
+                    visible = true,
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
+                    QuestionAnswerCard(
+                        question = pair.userSummary,
+                        answer = pair.aiSummary
+                    )
+                }
+            }
+        } else {
+            if (userSummaries.isNotEmpty()) {
+                userSummaries.sortedByDescending { it.timestamp }.forEach { summary ->
+                    AnimatedVisibility(
+                        visible = true,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        SingleSummaryCard(
+                            title = "Вопрос (сжатый) - последние ${userSummaries.size} сообщений",
+                            summary = summary,
+                            icon = "❓",
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+            if (aiSummaries.isNotEmpty()) {
+                aiSummaries.sortedByDescending { it.timestamp }.forEach { summary ->
+                    AnimatedVisibility(
+                        visible = true,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        SingleSummaryCard(
+                            title = "Ответ (сжатый) - последние ${aiSummaries.size} сообщений",
+                            summary = summary,
+                            icon = "💬",
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class SummaryPair(
+    val userSummary: ContextSummary,
+    val aiSummary: ContextSummary
+)
+
+private fun buildSummaryPairs(
+    userSummaries: List<ContextSummary>,
+    aiSummaries: List<ContextSummary>
+): List<SummaryPair> {
+    if (userSummaries.isEmpty() || aiSummaries.isEmpty()) return emptyList()
+    
+    val sortedUser = userSummaries.sortedByDescending { it.timestamp }
+    val sortedAi = aiSummaries.sortedByDescending { it.timestamp }
+    
+    val pairs = mutableListOf<SummaryPair>()
+    val usedAiIndices = mutableSetOf<Int>()
+    
+    for (userSummary in sortedUser) {
+        val closestAi = sortedAi
+            .mapIndexedNotNull { index, aiSummary ->
+                if (index in usedAiIndices) null
+                else {
+                    val timeDiff = kotlin.math.abs(userSummary.timestamp - aiSummary.timestamp)
+                    Triple(index, aiSummary, timeDiff)
+                }
+            }
+            .minByOrNull { it.third }
+        
+        if (closestAi != null && closestAi.third < 3600000) {
+            usedAiIndices.add(closestAi.first)
+            pairs.add(SummaryPair(userSummary, closestAi.second))
+        }
+    }
+    
+    return pairs.sortedByDescending { 
+        kotlin.math.max(it.userSummary.timestamp, it.aiSummary.timestamp) 
+    }
+}
+
+@Composable
+private fun SingleSummaryCard(
+    title: String,
+    summary: ContextSummary,
+    icon: String,
+    color: androidx.compose.ui.graphics.Color
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+        tonalElevation = 2.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = icon,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = color,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = summary.summary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp)
+                )
+            }
+            if (summary.keyFacts.isNotEmpty()) {
+                Column(
+                    modifier = Modifier.padding(start = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    summary.keyFacts.take(3).forEach { fact ->
+                        Text(
+                            text = "• $fact",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuestionAnswerCard(
+    question: ContextSummary,
+    answer: ContextSummary
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+        tonalElevation = 2.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "❓",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = "Вопрос (сжатый)",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = question.summary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp)
+                    )
+                }
+                if (question.keyFacts.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier.padding(start = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        question.keyFacts.take(3).forEach { fact ->
+                            Text(
+                                text = "• $fact",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
+                }
+            }
+            
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                thickness = 1.dp
+            )
+            
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "💬",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = "Ответ (сжатый)",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = answer.summary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp)
+                    )
+                }
+                if (answer.keyFacts.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier.padding(start = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        answer.keyFacts.take(3).forEach { fact ->
+                            Text(
+                                text = "• $fact",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
                 }
             }
         }

@@ -26,5 +26,10 @@ interface ChatMessageDao {
 
     @Query("DELETE FROM chat_messages WHERE id = :messageId")
     suspend fun deleteMessage(messageId: String)
+
+    @Query(
+        "SELECT * FROM chat_messages WHERE isUser = :isUser ORDER BY timestamp DESC LIMIT :limit"
+    )
+    suspend fun getLastMessages(isUser: Boolean, limit: Int): List<ChatMessageEntity>
 }
 

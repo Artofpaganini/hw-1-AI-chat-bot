@@ -27,5 +27,6 @@ dependencies {
     implementation(libs.bundles.room)
     kapt(libs.room.compiler)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.gson)
 }
 

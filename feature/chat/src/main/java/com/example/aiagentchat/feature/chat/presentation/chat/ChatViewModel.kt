@@ -3,19 +3,25 @@ package com.example.aiagentchat.feature.chat.presentation.chat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.aiagentchat.feature.chat.domain.model.AiModel
+import com.example.aiagentchat.feature.chat.domain.model.ContextSummary
 import com.example.aiagentchat.feature.chat.domain.model.Message
+import com.example.aiagentchat.feature.chat.domain.model.SessionContext
 import com.example.aiagentchat.feature.chat.domain.repository.AiModelRepository
 import com.example.aiagentchat.feature.chat.domain.repository.ChatRepository
 import com.example.aiagentchat.feature.chat.domain.usecase.CompareModelMetricsUseCase
+import com.example.aiagentchat.feature.chat.domain.usecase.CompressionScheduler
+import com.example.aiagentchat.feature.chat.domain.usecase.ContextInitializer
 import com.example.aiagentchat.feature.chat.domain.usecase.ExportChatHistoryUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.SendMessageUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.SwitchAiModelUseCase
+import com.example.aiagentchat.feature.chat.data.api.ChatMessageDto
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -25,7 +31,9 @@ class ChatViewModel(
     private val compareModelMetricsUseCase: CompareModelMetricsUseCase,
     private val exportChatHistoryUseCase: ExportChatHistoryUseCase,
     private val aiModelRepository: AiModelRepository,
-    private val chatRepository: ChatRepository
+    private val chatRepository: ChatRepository,
+    private val compressionScheduler: CompressionScheduler,
+    private val contextInitializer: ContextInitializer
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChatUiState())
@@ -40,6 +48,8 @@ class ChatViewModel(
     init {
         updateConfiguredModels()
         loadMessages()
+        loadSessionContext()
+        observeContextSummaries()
     }
 
     fun onAction(action: ChatAction) {
@@ -51,6 +61,7 @@ class ChatViewModel(
             is ChatAction.ClearChat -> handleClearChat()
             is ChatAction.ExportChat -> handleExportChat()
             is ChatAction.DismissExport -> handleDismissExport()
+            is ChatAction.CheckMessageThreshold -> handleCheckMessageThreshold(action.message)
         }
     }
     
@@ -82,6 +93,29 @@ class ChatViewModel(
         }
     }
 
+    private fun loadSessionContext() {
+        viewModelScope.launch {
+            val context = contextInitializer.loadLatest()
+            _uiState.update { it.copy(sessionContext = context) }
+        }
+    }
+
+    private fun observeContextSummaries() {
+        viewModelScope.launch {
+            combine(
+                chatRepository.getContextSummaries(ContextSummary.SummaryType.USER_PACK),
+                chatRepository.getContextSummaries(ContextSummary.SummaryType.AI_PACK)
+            ) { user, ai ->
+                SessionContext(
+                    userSummaries = user,
+                    aiSummaries = ai
+                )
+            }.collect { sessionContext ->
+                _uiState.update { it.copy(sessionContext = sessionContext) }
+            }
+        }
+    }
+
     private fun handleInputChanged(input: String) {
         _uiState.update { it.copy(currentInput = input) }
     }
@@ -97,6 +131,7 @@ class ChatViewModel(
 
         viewModelScope.launch {
             chatRepository.saveMessage(userMessage)
+            handleCheckMessageThreshold(userMessage)
             _uiState.update { state ->
                 state.copy(
                     currentInput = "",
@@ -105,9 +140,12 @@ class ChatViewModel(
                 )
             }
 
-            sendMessageUseCase(_uiState.value.selectedModel, currentInput)
+            val messagesWithContext = buildMessagesWithContext(currentInput)
+
+            sendMessageUseCase(_uiState.value.selectedModel, messagesWithContext)
                 .onSuccess { aiMessage ->
                     chatRepository.saveMessage(aiMessage)
+                    handleCheckMessageThreshold(aiMessage)
                     val updatedMessages = _uiState.value.messages + userMessage + aiMessage
                     val comparison = compareModelMetricsUseCase(updatedMessages, currentInput)
                     _uiState.update { state ->
@@ -170,6 +208,70 @@ class ChatViewModel(
 
     private fun handleDismissExport() {
         _uiState.update { it.copy(exportedToon = null) }
+    }
+
+    private fun handleCheckMessageThreshold(message: Message) {
+        viewModelScope.launch {
+            compressionScheduler.onMessageSaved(
+                message = message,
+                modelForSummary = _uiState.value.selectedModel
+            )
+        }
+    }
+
+    private fun buildMessagesWithContext(currentInput: String): List<ChatMessageDto> {
+        val sessionContext = _uiState.value.sessionContext
+        val messages = mutableListOf<ChatMessageDto>()
+        
+        val contextParts = mutableListOf<String>()
+        
+        if (sessionContext.userSummaries.isNotEmpty()) {
+            val userContext = sessionContext.userSummaries
+                .sortedByDescending { it.timestamp }
+                .take(3)
+                .joinToString(separator = "\n\n") { summary ->
+                    "Пользователь: ${summary.summary}" + 
+                    if (summary.keyFacts.isNotEmpty()) {
+                        "\nКлючевые факты: ${summary.keyFacts.joinToString(", ")}"
+                    } else ""
+                }
+            contextParts.add("Контекст предыдущих сообщений пользователя:\n$userContext")
+        }
+        
+        if (sessionContext.aiSummaries.isNotEmpty()) {
+            val aiContext = sessionContext.aiSummaries
+                .sortedByDescending { it.timestamp }
+                .take(3)
+                .joinToString(separator = "\n\n") { summary ->
+                    "AI: ${summary.summary}" + 
+                    if (summary.keyFacts.isNotEmpty()) {
+                        "\nКлючевые факты: ${summary.keyFacts.joinToString(", ")}"
+                    } else ""
+                }
+            contextParts.add("Контекст предыдущих ответов AI:\n$aiContext")
+        }
+        
+        val currentMessages = _uiState.value.messages
+            .filter { !it.isCompressed }
+            .map { message ->
+                ChatMessageDto(
+                    role = if (message.isUser) "user" else "assistant",
+                    content = message.content
+                )
+            }
+        
+        if (contextParts.isNotEmpty()) {
+            val systemMessage = contextParts.joinToString("\n\n") + 
+                "\n\nИспользуй этот контекст для понимания истории разговора. " +
+                "Отвечай с учетом предыдущих обсуждений. " +
+                "Если пользователь спрашивает о чем-то из прошлого, используй этот контекст для ответа."
+            messages.add(ChatMessageDto(role = "system", content = systemMessage))
+        }
+        
+        messages.addAll(currentMessages)
+        messages.add(ChatMessageDto(role = "user", content = currentInput))
+        
+        return messages
     }
 }
 
