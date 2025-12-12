@@ -8,3 +8,5 @@ interface AiModelRepository {
     fun isModelConfigured(model: AiModel): Boolean
 }
 
+
+
