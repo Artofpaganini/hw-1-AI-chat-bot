@@ -19,3 +19,4 @@ class ModelNotConfiguredException(val model: AiModel) : Exception(
     "API key for ${model.displayName} is not configured. Please add it to local.properties"
 )
 
+
