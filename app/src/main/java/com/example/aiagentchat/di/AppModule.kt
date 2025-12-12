@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.example.aiagentchat.core.database.ChatDatabase
 import com.example.aiagentchat.core.database.dao.ChatMessageDao
+import com.example.aiagentchat.core.database.dao.ContextSummaryDao
 import com.example.aiagentchat.BuildConfig
 import com.example.aiagentchat.feature.chat.data.PricingConfig
 import com.example.aiagentchat.feature.chat.data.repository.AiModelRepositoryImpl
@@ -15,7 +16,10 @@ import com.example.aiagentchat.feature.chat.domain.repository.ChatRepository
 import com.example.aiagentchat.feature.chat.domain.repository.MetricsRepository
 import com.example.aiagentchat.feature.chat.domain.repository.PricingRepository
 import com.example.aiagentchat.feature.chat.domain.usecase.CompareModelMetricsUseCase
+import com.example.aiagentchat.feature.chat.domain.usecase.CompressionScheduler
+import com.example.aiagentchat.feature.chat.domain.usecase.ContextInitializer
 import com.example.aiagentchat.feature.chat.domain.usecase.ExportChatHistoryUseCase
+import com.example.aiagentchat.feature.chat.domain.usecase.FallbackSummarizer
 import com.example.aiagentchat.feature.chat.domain.usecase.SendMessageUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.SwitchAiModelUseCase
 import com.example.aiagentchat.feature.chat.presentation.chat.ChatViewModel
@@ -29,10 +33,13 @@ val appModule = module {
             androidContext(),
             ChatDatabase::class.java,
             "chat_database"
-        ).build()
+        )
+            .fallbackToDestructiveMigration(true)
+            .build()
     }
 
     single<ChatMessageDao> { get<ChatDatabase>().chatMessageDao() }
+    single<ContextSummaryDao> { get<ChatDatabase>().contextSummaryDao() }
 
     single {
         com.example.aiagentchat.feature.chat.data.AuthManager(
@@ -53,7 +60,7 @@ val appModule = module {
         )
     }
     single<PricingRepository> { PricingRepositoryImpl(get()) }
-    single<ChatRepository> { ChatRepositoryImpl(get()) }
+    single<ChatRepository> { ChatRepositoryImpl(get(), get()) }
     single<AiModelRepository> { AiModelRepositoryImpl(get()) }
     single<MetricsRepository> { MetricsRepositoryImpl(get()) }
 
@@ -69,8 +76,14 @@ val appModule = module {
             compareModelMetricsUseCase = get(),
             exportChatHistoryUseCase = get(),
             aiModelRepository = get(),
-            chatRepository = get()
+            chatRepository = get(),
+            compressionScheduler = get(),
+            contextInitializer = get()
         )
     }
+
+    factory { FallbackSummarizer() }
+    factory { ContextInitializer(get()) }
+    factory { CompressionScheduler(get(), get(), get()) }
 }
 

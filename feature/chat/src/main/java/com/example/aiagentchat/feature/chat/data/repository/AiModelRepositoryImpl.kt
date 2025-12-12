@@ -18,7 +18,7 @@ class AiModelRepositoryImpl(
         private const val TAG = "AiModelRepository"
     }
 
-    override suspend fun sendMessage(model: AiModel, prompt: String): Result<AiResponse> {
+    override suspend fun sendMessage(model: AiModel, messages: List<ChatMessageDto>): Result<AiResponse> {
         return try {
             val apiKey = authManager.getApiKey(model)
             if (apiKey.isBlank()) {
@@ -26,9 +26,7 @@ class AiModelRepositoryImpl(
             }
             val request = ChatRequest(
                 model = model.modelId,
-                messages = listOf(
-                    ChatMessageDto(role = "user", content = prompt)
-                ),
+                messages = messages,
             )
 
             val response = when (model) {

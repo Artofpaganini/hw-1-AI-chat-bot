@@ -1,9 +1,11 @@
 package com.example.aiagentchat.feature.chat.data.mapper
 
 import com.example.aiagentchat.core.database.entity.ChatMessageEntity
+import com.example.aiagentchat.core.database.entity.ContextSummaryEntity
 import com.example.aiagentchat.feature.chat.domain.model.AiModel
 import com.example.aiagentchat.feature.chat.domain.model.Message
 import com.example.aiagentchat.feature.chat.domain.model.MessageMetrics
+import com.example.aiagentchat.feature.chat.domain.model.ContextSummary
 
 fun ChatMessageEntity.toDomain(): Message {
     val responseTime = responseTimeMs
@@ -42,6 +44,24 @@ fun Message.toEntity(): ChatMessageEntity {
         costUsd = metrics?.costUsd,
         timestamp = timestamp,
         isCompressed = isCompressed
+    )
+}
+
+fun ContextSummaryEntity.toDomain(): ContextSummary {
+    return ContextSummary(
+        type = ContextSummary.SummaryType.valueOf(type),
+        summary = summary,
+        keyFacts = keyFacts,
+        timestamp = timestamp
+    )
+}
+
+fun ContextSummary.toEntity(): ContextSummaryEntity {
+    return ContextSummaryEntity(
+        type = type.name,
+        summary = summary,
+        keyFacts = keyFacts,
+        timestamp = timestamp
     )
 }
 
