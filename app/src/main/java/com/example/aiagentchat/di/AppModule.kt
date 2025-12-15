@@ -13,8 +13,13 @@ import com.example.aiagentchat.feature.chat.data.repository.MetricsRepositoryImp
 import com.example.aiagentchat.feature.chat.data.repository.PricingRepositoryImpl
 import com.example.aiagentchat.feature.chat.domain.repository.AiModelRepository
 import com.example.aiagentchat.feature.chat.domain.repository.ChatRepository
+import com.example.aiagentchat.feature.chat.domain.repository.McpRepository
 import com.example.aiagentchat.feature.chat.domain.repository.MetricsRepository
 import com.example.aiagentchat.feature.chat.domain.repository.PricingRepository
+import com.example.aiagentchat.feature.chat.data.repository.McpRepositoryImpl
+import com.example.aiagentchat.feature.chat.data.api.McpApi
+import com.example.aiagentchat.core.network.ApiClient
+import com.google.gson.Gson
 import com.example.aiagentchat.feature.chat.domain.usecase.CompareModelMetricsUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.CompressionScheduler
 import com.example.aiagentchat.feature.chat.domain.usecase.ContextInitializer
@@ -24,8 +29,10 @@ import com.example.aiagentchat.feature.chat.domain.usecase.SendMessageUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.SwitchAiModelUseCase
 import com.example.aiagentchat.feature.chat.presentation.chat.ChatViewModel
 import org.koin.android.ext.koin.androidContext
+import org.koin.core.error.InstanceCreationException
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
+import android.util.Log
 
 val appModule = module {
     single<ChatDatabase> {
@@ -63,6 +70,28 @@ val appModule = module {
     single<ChatRepository> { ChatRepositoryImpl(get(), get()) }
     single<AiModelRepository> { AiModelRepositoryImpl(get()) }
     single<MetricsRepository> { MetricsRepositoryImpl(get()) }
+    
+    single<Gson> { Gson() }
+    
+    single<McpApi> {
+        try {
+            val mcpUrl = BuildConfig.MCP_SERVER_URL
+            require(mcpUrl.isNotBlank()) { "MCP_SERVER_URL is blank" }
+            val baseUrl = if (mcpUrl.endsWith("/")) mcpUrl else "$mcpUrl/"
+            ApiClient.createRetrofit(baseUrl).create(McpApi::class.java)
+        } catch (e: Exception) {
+            Log.e("AppModule", "Failed to create McpApi", e)
+            throw InstanceCreationException("Could not create McpApi: ${e.message}", e)
+        }
+    }
+    
+    single<McpRepository> { 
+        McpRepositoryImpl(
+            mcpApi = get(),
+            context7ApiKey = BuildConfig.CONTEXT7_API_KEY,
+            gson = get()
+        )
+    }
 
     factory { SendMessageUseCase(get(), get()) }
     factory { SwitchAiModelUseCase(get()) }
@@ -78,7 +107,8 @@ val appModule = module {
             aiModelRepository = get(),
             chatRepository = get(),
             compressionScheduler = get(),
-            contextInitializer = get()
+            contextInitializer = get(),
+            mcpRepository = get()
         )
     }
 

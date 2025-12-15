@@ -21,3 +21,4 @@ class ModelNotConfiguredException(val model: AiModel) : Exception(
 
 
 
+

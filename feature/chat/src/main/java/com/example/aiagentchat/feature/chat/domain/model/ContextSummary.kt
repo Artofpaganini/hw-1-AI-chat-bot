@@ -22,3 +22,4 @@ data class SessionContext(
         get() = aiSummaries.maxByOrNull { it.timestamp }
 }
 
+

@@ -28,9 +28,13 @@ android {
 
         val deepSeekKey = localProperties.getProperty("DEEPSEEK_API_KEY") ?: ""
         val openRouterKey = localProperties.getProperty("OPENROUTER_API_KEY") ?: ""
+        val context7Key = localProperties.getProperty("CONTEXT7_API_KEY") ?: "ctx7sk-3c70abfe-27c0-4a04-ab41-343bd9f21d34"
+        val mcpServerUrl = localProperties.getProperty("MCP_SERVER_URL") ?: "https://mcp.context7.com/"
 
         buildConfigField("String", "DEEPSEEK_API_KEY", "\"$deepSeekKey\"")
         buildConfigField("String", "OPENROUTER_API_KEY", "\"$openRouterKey\"")
+        buildConfigField("String", "CONTEXT7_API_KEY", "\"$context7Key\"")
+        buildConfigField("String", "MCP_SERVER_URL", "\"$mcpServerUrl\"")
 
         buildConfigField("Double", "DEEPSEEK_INPUT_PRICE", "0.14")
         buildConfigField("Double", "DEEPSEEK_OUTPUT_PRICE", "0.28")
