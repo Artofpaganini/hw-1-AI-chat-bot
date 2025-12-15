@@ -8,6 +8,7 @@ import com.example.aiagentchat.feature.chat.domain.model.Message
 import com.example.aiagentchat.feature.chat.domain.model.SessionContext
 import com.example.aiagentchat.feature.chat.domain.repository.AiModelRepository
 import com.example.aiagentchat.feature.chat.domain.repository.ChatRepository
+import com.example.aiagentchat.feature.chat.domain.repository.McpRepository
 import com.example.aiagentchat.feature.chat.domain.usecase.CompareModelMetricsUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.CompressionScheduler
 import com.example.aiagentchat.feature.chat.domain.usecase.ContextInitializer
@@ -33,7 +34,8 @@ class ChatViewModel(
     private val aiModelRepository: AiModelRepository,
     private val chatRepository: ChatRepository,
     private val compressionScheduler: CompressionScheduler,
-    private val contextInitializer: ContextInitializer
+    private val contextInitializer: ContextInitializer,
+    private val mcpRepository: McpRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChatUiState())
@@ -50,6 +52,7 @@ class ChatViewModel(
         loadMessages()
         loadSessionContext()
         observeContextSummaries()
+        observeMcpTools()
     }
 
     fun onAction(action: ChatAction) {
@@ -62,6 +65,9 @@ class ChatViewModel(
             is ChatAction.ExportChat -> handleExportChat()
             is ChatAction.DismissExport -> handleDismissExport()
             is ChatAction.CheckMessageThreshold -> handleCheckMessageThreshold(action.message)
+            is ChatAction.ShowMcpTools -> handleShowMcpTools()
+            is ChatAction.DismissMcpTools -> handleDismissMcpTools()
+            is ChatAction.ToggleMcpTool -> handleToggleMcpTool(action.toolName, action.enabled)
         }
     }
     
@@ -216,6 +222,39 @@ class ChatViewModel(
                 message = message,
                 modelForSummary = _uiState.value.selectedModel
             )
+        }
+    }
+
+    private fun observeMcpTools() {
+        viewModelScope.launch {
+            mcpRepository.observeTools().collect { tools ->
+                _uiState.update { it.copy(mcpTools = tools) }
+            }
+        }
+        viewModelScope.launch {
+            mcpRepository.listTools()
+        }
+    }
+
+    private fun handleShowMcpTools() {
+        viewModelScope.launch {
+            mcpRepository.listTools()
+            _uiState.update { it.copy(showMcpToolsDialog = true) }
+        }
+    }
+
+    private fun handleDismissMcpTools() {
+        _uiState.update { it.copy(showMcpToolsDialog = false) }
+    }
+
+    private fun handleToggleMcpTool(toolName: String, enabled: Boolean) {
+        _uiState.update { state ->
+            val newEnabled = if (enabled) {
+                state.enabledMcpTools + toolName
+            } else {
+                state.enabledMcpTools - toolName
+            }
+            state.copy(enabledMcpTools = newEnabled)
         }
     }
 

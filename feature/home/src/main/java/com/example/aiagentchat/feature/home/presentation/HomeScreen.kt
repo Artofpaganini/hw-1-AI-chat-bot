@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -68,6 +69,7 @@ import com.example.aiagentchat.feature.chat.presentation.components.ChatInput
 import com.example.aiagentchat.feature.chat.presentation.components.MessageBubble
 import com.example.aiagentchat.feature.chat.presentation.components.MetricsComparisonCard
 import com.example.aiagentchat.feature.chat.presentation.components.ModelSwitcher
+import com.example.aiagentchat.feature.chat.presentation.components.McpToolsDialog
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 
@@ -110,6 +112,19 @@ fun HomeScreen(
         )
     }
     
+    if (state.showMcpToolsDialog) {
+        McpToolsDialog(
+            tools = state.mcpTools,
+            enabledTools = state.enabledMcpTools,
+            onToolToggle = { toolName, enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleMcpTool(toolName, enabled))
+            },
+            onDismiss = {
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.DismissMcpTools)
+            }
+        )
+    }
+    
     Scaffold(
         modifier = Modifier.navigationBarsPadding(),
         topBar = {
@@ -123,6 +138,15 @@ fun HomeScreen(
                     )
                 },
                 actions = {
+                    IconButton(
+                        onClick = { viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ShowMcpTools) }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "MCP Tools",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     if (state.messages.isNotEmpty()) {
                         IconButton(
                             onClick = { viewModel.onEvent(ChatEvent.OnExportChat) }
