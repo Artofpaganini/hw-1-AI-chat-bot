@@ -231,9 +231,6 @@ class ChatViewModel(
                 _uiState.update { it.copy(mcpTools = tools) }
             }
         }
-        viewModelScope.launch {
-            mcpRepository.listTools()
-        }
     }
 
     private fun handleShowMcpTools() {
