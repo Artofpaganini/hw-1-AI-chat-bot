@@ -26,17 +26,29 @@ class McpRepositoryImpl(
     }
 
     private var sessionId: String? = null
+    private var isInitialized = false
+    private var isLoadingTools = false
     private val _tools = MutableStateFlow<List<McpTool>>(emptyList())
     override fun observeTools(): Flow<List<McpTool>> = _tools.asStateFlow()
 
     override suspend fun listTools(): Result<List<McpTool>> {
+        // Prevent multiple simultaneous calls
+        if (isLoadingTools) {
+            Log.d(TAG, "listTools already in progress, skipping")
+            return Result.success(_tools.value)
+        }
+        
         return try {
+            isLoadingTools = true
+            
             // Initialize session if not already done
-            if (sessionId == null) {
+            if (!isInitialized) {
                 val initResult = initializeSession()
                 if (initResult.isFailure) {
+                    isLoadingTools = false
                     return Result.failure(initResult.exceptionOrNull() ?: Exception("Failed to initialize session"))
                 }
+                isInitialized = true
             }
 
             val request = JsonRpcRequest(
@@ -59,14 +71,17 @@ class McpRepositoryImpl(
 
                 val tools = parseToolsResponse(body.result)
                 _tools.update { tools }
+                isLoadingTools = false
                 Result.success(tools)
             } else {
                 val errorBody = response.errorBody()?.string() ?: "Unknown error"
                 Log.e(TAG, "List tools failed: ${response.code()} - $errorBody")
+                isLoadingTools = false
                 Result.failure(Exception("HTTP Error: ${response.code()} - $errorBody"))
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error listing MCP tools", e)
+            isLoadingTools = false
             Result.failure(e)
         }
     }
