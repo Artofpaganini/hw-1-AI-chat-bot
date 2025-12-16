@@ -23,11 +23,38 @@ application {
 }
 
 tasks.jar {
+    archiveBaseName.set("mcp-server")
+    archiveVersion.set("1.0.0")
+    
     manifest {
         attributes["Main-Class"] = "com.example.mcpserver.WeatherMcpServerSimpleKt"
     }
+    
     from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    
+    doLast {
+        println("JAR created at: ${archiveFile.get().asFile.absolutePath}")
+    }
+}
+
+tasks.register<Jar>("fatJar") {
+    archiveBaseName.set("mcp-server")
+    archiveVersion.set("1.0.0")
+    archiveClassifier.set("all")
+    
+    manifest {
+        attributes["Main-Class"] = "com.example.mcpserver.WeatherMcpServerSimpleKt"
+    }
+    
+    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+    with(tasks.jar.get() as CopySpec)
+    
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    
+    doLast {
+        println("Fat JAR created at: ${archiveFile.get().asFile.absolutePath}")
+    }
 }
 
 kotlin {

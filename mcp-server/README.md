@@ -9,23 +9,37 @@ MCP сервер для получения информации о погоде 
 
 ## Сборка
 
+### Создание Fat JAR (со всеми зависимостями)
+
 ```bash
 cd mcp-server
-../gradlew build
+../gradlew :mcp-server:fatJar
 ```
 
-JAR файл будет создан в `build/libs/mcp-server-1.0.0.jar`
+Fat JAR файл будет создан в `build/libs/mcp-server-1.0.0-all.jar`
+
+**Важно:** Используйте именно `fatJar` задачу, так как она создает JAR со всеми зависимостями, необходимыми для запуска.
 
 **Важно:** Сервер компилируется для Java 17. Убедитесь, что у вас установлена Java 17 или выше для запуска.
 
 ## Запуск HTTP сервера
 
-Сервер использует HTTP транспорт с SSE (Server-Sent Events) для коммуникации:
+Сервер использует HTTP транспорт с JSON-RPC для коммуникации:
 
+### Вариант 1: Использование скрипта (рекомендуется)
 ```bash
 cd mcp-server
-java -jar build/libs/mcp-server-1.0.0.jar [port]
+./start-server.sh [port]
 ```
+
+### Вариант 2: Ручной запуск
+```bash
+cd mcp-server
+../gradlew :mcp-server:fatJar
+java -jar build/libs/mcp-server-1.0.0-all.jar [port]
+```
+
+По умолчанию используется порт 8080, если не указан другой.
 
 По умолчанию сервер запускается на порту 8080 и слушает на всех интерфейсах (0.0.0.0).
 
@@ -33,7 +47,7 @@ MCP endpoint доступен по адресу: `http://localhost:8080/mcp` (и
 
 **Важно:** Убедитесь, что вы пересобрали JAR файл после изменений:
 ```bash
-../gradlew build
+../gradlew :mcp-server:fatJar
 ```
 
 ## Использование Weather.gov API
@@ -48,10 +62,11 @@ API не требует ключа, но требует указания User-Ag
 
 Для запуска на Android эмуляторе:
 
-1. Запустите MCP сервер на хосте:
+1. Соберите и запустите MCP сервер на хосте:
 ```bash
 cd mcp-server
-java -jar build/libs/mcp-server-1.0.0.jar 8080
+../gradlew :mcp-server:fatJar
+java -jar build/libs/mcp-server-1.0.0-all.jar 8080
 ```
 
 2. В Android приложении используйте URL: `http://10.0.2.2:8080/mcp`
@@ -74,7 +89,7 @@ MCP_SERVER_URL=http://10.0.2.2:8080/
       "command": "java",
       "args": [
         "-jar",
-        "/absolute/path/to/mcp-server/build/libs/mcp-server-1.0.0.jar"
+        "/absolute/path/to/mcp-server/build/libs/mcp-server-1.0.0-all.jar"
       ],
     }
   }
