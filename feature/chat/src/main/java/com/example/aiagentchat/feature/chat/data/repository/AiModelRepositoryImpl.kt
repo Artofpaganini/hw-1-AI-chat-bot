@@ -58,6 +58,30 @@ class AiModelRepositoryImpl(
             } else {
                 Result.failure(Exception("API Error ${response.code()}: ${response.message()}"))
             }
+        } catch (e: java.net.UnknownHostException) {
+            Log.e(TAG, "Network error: Unable to resolve host for ${model.displayName}", e)
+            val hostName = e.message?.substringAfter("Unable to resolve host \"")?.substringBefore("\"") ?: "unknown host"
+            Result.failure(
+                Exception(
+                    "Network error: Unable to connect to $hostName. " +
+                            "Please check your internet connection and try again."
+                )
+            )
+        } catch (e: java.net.SocketTimeoutException) {
+            Log.e(TAG, "Network timeout for ${model.displayName}", e)
+            Result.failure(
+                Exception(
+                    "Connection timeout. Please check your internet connection and try again."
+                )
+            )
+        } catch (e: java.io.IOException) {
+            Log.e(TAG, "Network IO error for ${model.displayName}", e)
+            Result.failure(
+                Exception(
+                    "Network error: ${e.message ?: "Unable to connect to the server"}. " +
+                            "Please check your internet connection."
+                )
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Error sending message to ${model.displayName}", e)
             Result.failure(e)
