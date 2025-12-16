@@ -23,6 +23,7 @@
             <option value="$PROJECT_DIR$/feature/patients" />
             <option value="$PROJECT_DIR$/feature/profile" />
             <option value="$PROJECT_DIR$/feature/settings" />
+            <option value="$PROJECT_DIR$/mcp-server" />
           </set>
         </option>
       </GradleProjectSettings>

@@ -88,12 +88,12 @@ val appModule = module {
     single<McpRepository> { 
         McpRepositoryImpl(
             mcpApi = get(),
-            context7ApiKey = BuildConfig.CONTEXT7_API_KEY,
+            context7ApiKey = BuildConfig.CONTEXT7_API_KEY.takeIf { it.isNotBlank() },
             gson = get()
         )
     }
 
-    factory { SendMessageUseCase(get(), get()) }
+    factory { SendMessageUseCase(get(), get(), get()) }
     factory { SwitchAiModelUseCase(get()) }
     factory { CompareModelMetricsUseCase() }
     factory { ExportChatHistoryUseCase() }

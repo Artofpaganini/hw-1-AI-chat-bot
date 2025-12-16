@@ -148,7 +148,11 @@ class ChatViewModel(
 
             val messagesWithContext = buildMessagesWithContext(currentInput)
 
-            sendMessageUseCase(_uiState.value.selectedModel, messagesWithContext)
+            sendMessageUseCase(
+                model = _uiState.value.selectedModel,
+                messages = messagesWithContext,
+                enabledMcpTools = _uiState.value.enabledMcpTools
+            )
                 .onSuccess { aiMessage ->
                     chatRepository.saveMessage(aiMessage)
                     handleCheckMessageThreshold(aiMessage)
