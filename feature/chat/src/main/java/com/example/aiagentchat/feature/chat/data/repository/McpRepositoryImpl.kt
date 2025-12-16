@@ -16,7 +16,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 class McpRepositoryImpl(
     private val mcpApi: McpApi,
-    private val context7ApiKey: String,
+    private val context7ApiKey: String?,
     private val gson: Gson = Gson()
 ) : McpRepository {
 
@@ -57,8 +57,9 @@ class McpRepositoryImpl(
                 params = emptyMap()
             )
 
+            val authorization = context7ApiKey?.let { "Bearer $it" }
             val response = mcpApi.sendRequest(
-                authorization = "Bearer $context7ApiKey",
+                authorization = authorization,
                 sessionId = sessionId,
                 request = request
             )
@@ -107,6 +108,68 @@ class McpRepositoryImpl(
         }
     }
 
+    override suspend fun callTool(toolName: String, arguments: Map<String, Any>): Result<String> {
+        return try {
+            if (!isInitialized) {
+                val initResult = initializeSession()
+                if (initResult.isFailure) {
+                    return Result.failure(initResult.exceptionOrNull() ?: Exception("Failed to initialize session"))
+                }
+                isInitialized = true
+            }
+
+            val request = JsonRpcRequest(
+                id = requestId++,
+                method = "tools/call",
+                params = mapOf(
+                    "name" to toolName,
+                    "arguments" to arguments
+                )
+            )
+
+            val authorization = context7ApiKey?.let { "Bearer $it" }
+            val response = mcpApi.sendRequest(
+                authorization = authorization,
+                sessionId = sessionId,
+                request = request
+            )
+
+            if (response.isSuccessful && response.body() != null) {
+                val body = response.body()!!
+                if (body.error != null) {
+                    return Result.failure(Exception("MCP Error: ${body.error.message}"))
+                }
+
+                val result = parseToolCallResponse(body.result)
+                Result.success(result)
+            } else {
+                val errorBody = response.errorBody()?.string() ?: "Unknown error"
+                Log.e(TAG, "Call tool failed: ${response.code()} - $errorBody")
+                Result.failure(Exception("HTTP Error: ${response.code()} - $errorBody"))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error calling MCP tool", e)
+            Result.failure(e)
+        }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun parseToolCallResponse(result: Map<String, Any>?): String {
+        if (result == null) return "No result"
+        
+        val content = result["content"] as? List<*> ?: return "No content"
+        if (content.isEmpty()) return "Empty content"
+        
+        val firstContent = content.firstOrNull() as? Map<String, Any> ?: return "Invalid content format"
+        val text = firstContent["text"] as? String 
+            ?: firstContent["content"] as? String
+            ?: (firstContent["type"] as? String)?.let { 
+                if (it == "text") firstContent["text"] as? String else null
+            }
+        
+        return text ?: "No text content"
+    }
+
     private suspend fun initializeSession(): Result<Unit> {
         return try {
             val initRequest = JsonRpcRequest(
@@ -148,8 +211,9 @@ class McpRepositoryImpl(
                     params = emptyMap()
                 )
 
+                val auth = context7ApiKey?.let { "Bearer $it" }
                 mcpApi.sendRequest(
-                    authorization = "Bearer $context7ApiKey",
+                    authorization = auth,
                     sessionId = sessionId,
                     request = initializedRequest
                 )

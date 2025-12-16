@@ -37,7 +37,7 @@ data class JsonRpcError(
 interface McpApi {
     @POST("mcp")
     suspend fun sendRequest(
-        @retrofit2.http.Header("Authorization") authorization: String,
+        @retrofit2.http.Header("Authorization") authorization: String? = null,
         @retrofit2.http.Header("Content-Type") contentType: String = "application/json",
         @retrofit2.http.Header("Accept") accept: String = "application/json, text/event-stream",
         @retrofit2.http.Header("mcp-session-id") sessionId: String? = null,
