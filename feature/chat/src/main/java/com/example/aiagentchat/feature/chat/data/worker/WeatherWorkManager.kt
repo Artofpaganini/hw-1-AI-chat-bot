@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit
 class WeatherWorkManager(private val context: Context) {
     companion object {
         private const val WORK_NAME = "weather_notification_work"
-        private const val REPEAT_INTERVAL = 15L // 10 minutes
+        private const val REPEAT_INTERVAL = 15L // 15 minutes
     }
     
     fun getContext(): Context = context
