@@ -47,11 +47,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import android.os.Build
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -83,6 +87,21 @@ fun HomeScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    
+    // Launcher для запроса разрешения на уведомления
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            scope.launch {
+                snackbarHostState.showSnackbar("Notification permission granted")
+            }
+        } else {
+            scope.launch {
+                snackbarHostState.showSnackbar("Notification permission denied. Please enable it in settings.")
+            }
+        }
+    }
     
     LaunchedEffect(state.messages.size) {
         if (state.messages.isNotEmpty()) {
@@ -121,6 +140,29 @@ fun HomeScreen(
             },
             onDismiss = {
                 viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.DismissMcpTools)
+            },
+            weatherNotificationsEnabled = state.weatherNotificationsEnabled,
+            onWeatherNotificationsToggle = { enabled ->
+                if (enabled) {
+                    // Проверяем разрешение на уведомления (Android 13+)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        val hasPermission = ContextCompat.checkSelfPermission(
+                            context,
+                            android.Manifest.permission.POST_NOTIFICATIONS
+                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        
+                        if (!hasPermission) {
+                            // Запрашиваем разрешение
+                            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                            return@McpToolsDialog
+                        }
+                    }
+                }
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleWeatherNotifications(enabled))
+            },
+            testModeEnabled = state.testModeEnabled,
+            onTestModeToggle = { enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleTestMode(enabled))
             }
         )
     }

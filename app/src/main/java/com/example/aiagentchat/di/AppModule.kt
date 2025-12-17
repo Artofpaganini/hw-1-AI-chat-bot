@@ -98,6 +98,37 @@ val appModule = module {
     factory { CompareModelMetricsUseCase() }
     factory { ExportChatHistoryUseCase() }
 
+    factory { FallbackSummarizer() }
+    factory { ContextInitializer(get()) }
+    factory { CompressionScheduler(get(), get(), get()) }
+    
+    single<com.example.aiagentchat.core.common.preferences.PreferencesManager> {
+        com.example.aiagentchat.core.common.preferences.PreferencesManager(androidContext())
+    }
+    
+    single<com.example.aiagentchat.feature.chat.data.storage.WeatherDataStorage> {
+        com.example.aiagentchat.feature.chat.data.storage.WeatherDataStorage(
+            context = androidContext(),
+            gson = get()
+        )
+    }
+    
+    single<com.example.aiagentchat.feature.chat.data.notification.NotificationManager> {
+        com.example.aiagentchat.feature.chat.data.notification.NotificationManager(androidContext())
+    }
+    
+    factory<com.example.aiagentchat.feature.chat.domain.usecase.WeatherSummaryUseCase> {
+        com.example.aiagentchat.feature.chat.domain.usecase.WeatherSummaryUseCase(get())
+    }
+    
+    single<com.example.aiagentchat.feature.chat.data.worker.WeatherWorkManager> {
+        com.example.aiagentchat.feature.chat.data.worker.WeatherWorkManager(androidContext())
+    }
+    
+    single<com.example.aiagentchat.di.WeatherWorkerFactory> {
+        com.example.aiagentchat.di.WeatherWorkerFactory()
+    }
+
     viewModel {
         ChatViewModel(
             sendMessageUseCase = get(),
@@ -108,12 +139,10 @@ val appModule = module {
             chatRepository = get(),
             compressionScheduler = get(),
             contextInitializer = get(),
-            mcpRepository = get()
+            mcpRepository = get(),
+            preferencesManager = get(),
+            weatherWorkManager = get()
         )
     }
-
-    factory { FallbackSummarizer() }
-    factory { ContextInitializer(get()) }
-    factory { CompressionScheduler(get(), get(), get()) }
 }
 

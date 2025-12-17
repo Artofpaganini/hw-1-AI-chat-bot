@@ -19,7 +19,9 @@ data class ChatUiState(
     val sessionContext: SessionContext = SessionContext(),
     val mcpTools: List<McpTool> = emptyList(),
     val enabledMcpTools: Set<String> = emptySet(),
-    val showMcpToolsDialog: Boolean = false
+    val showMcpToolsDialog: Boolean = false,
+    val weatherNotificationsEnabled: Boolean = false,
+    val testModeEnabled: Boolean = false
 )
 
 sealed interface ChatAction {
@@ -34,6 +36,8 @@ sealed interface ChatAction {
     data object ShowMcpTools : ChatAction
     data object DismissMcpTools : ChatAction
     data class ToggleMcpTool(val toolName: String, val enabled: Boolean) : ChatAction
+    data class ToggleWeatherNotifications(val enabled: Boolean) : ChatAction
+    data class ToggleTestMode(val enabled: Boolean) : ChatAction
 }
 
 sealed interface ChatEvent {

@@ -1,7 +1,9 @@
 package com.example.aiagentchat.feature.chat.presentation.chat
 
+import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.aiagentchat.feature.chat.data.service.WeatherNotificationService
 import com.example.aiagentchat.feature.chat.domain.model.AiModel
 import com.example.aiagentchat.feature.chat.domain.model.ContextSummary
 import com.example.aiagentchat.feature.chat.domain.model.Message
@@ -35,7 +37,9 @@ class ChatViewModel(
     private val chatRepository: ChatRepository,
     private val compressionScheduler: CompressionScheduler,
     private val contextInitializer: ContextInitializer,
-    private val mcpRepository: McpRepository
+    private val mcpRepository: McpRepository,
+    private val preferencesManager: com.example.aiagentchat.core.common.preferences.PreferencesManager,
+    private val weatherWorkManager: com.example.aiagentchat.feature.chat.data.worker.WeatherWorkManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChatUiState())
@@ -53,6 +57,9 @@ class ChatViewModel(
         loadSessionContext()
         observeContextSummaries()
         observeMcpTools()
+        loadWeatherNotificationsState()
+        loadEnabledMcpTools()
+        loadTestModeState()
     }
 
     fun onAction(action: ChatAction) {
@@ -68,6 +75,8 @@ class ChatViewModel(
             is ChatAction.ShowMcpTools -> handleShowMcpTools()
             is ChatAction.DismissMcpTools -> handleDismissMcpTools()
             is ChatAction.ToggleMcpTool -> handleToggleMcpTool(action.toolName, action.enabled)
+            is ChatAction.ToggleWeatherNotifications -> handleToggleWeatherNotifications(action.enabled)
+            is ChatAction.ToggleTestMode -> handleToggleTestMode(action.enabled)
         }
     }
     
@@ -138,6 +147,9 @@ class ChatViewModel(
         viewModelScope.launch {
             chatRepository.saveMessage(userMessage)
             handleCheckMessageThreshold(userMessage)
+            
+            preferencesManager.lastUserQuery = currentInput
+            
             _uiState.update { state ->
                 state.copy(
                     currentInput = "",
@@ -248,6 +260,11 @@ class ChatViewModel(
         _uiState.update { it.copy(showMcpToolsDialog = false) }
     }
 
+    private fun loadEnabledMcpTools() {
+        val enabledTools = preferencesManager.getEnabledMcpTools()
+        _uiState.update { it.copy(enabledMcpTools = enabledTools) }
+    }
+
     private fun handleToggleMcpTool(toolName: String, enabled: Boolean) {
         _uiState.update { state ->
             val newEnabled = if (enabled) {
@@ -255,7 +272,102 @@ class ChatViewModel(
             } else {
                 state.enabledMcpTools - toolName
             }
-            state.copy(enabledMcpTools = newEnabled)
+            val updatedState = state.copy(enabledMcpTools = newEnabled)
+            // Сохраняем состояние в PreferencesManager
+            preferencesManager.setEnabledMcpTools(newEnabled)
+            updatedState
+        }
+    }
+
+    private fun loadWeatherNotificationsState() {
+        val enabled = preferencesManager.weatherNotificationsEnabled
+        val testMode = preferencesManager.testModeEnabled
+        _uiState.update { 
+            it.copy(
+                weatherNotificationsEnabled = enabled,
+                testModeEnabled = testMode
+            )
+        }
+        
+        // Планируем задачу если уведомления уже были включены
+        if (enabled) {
+            if (testMode) {
+                startWeatherService()
+            } else {
+                weatherWorkManager.scheduleWeatherNotifications(true)
+            }
+        }
+    }
+
+    private fun loadTestModeState() {
+        val enabled = preferencesManager.testModeEnabled
+        _uiState.update { it.copy(testModeEnabled = enabled) }
+    }
+
+    private fun handleToggleTestMode(enabled: Boolean) {
+        android.util.Log.d("ChatViewModel", "Toggle test mode: $enabled")
+        preferencesManager.testModeEnabled = enabled
+        _uiState.update { it.copy(testModeEnabled = enabled) }
+        
+        // Если включен test mode и уведомления включены, перезапускаем сервис
+        if (enabled && preferencesManager.weatherNotificationsEnabled) {
+            startWeatherService()
+        } else if (!enabled) {
+            stopWeatherService()
+        }
+    }
+
+    private fun handleToggleWeatherNotifications(enabled: Boolean) {
+        android.util.Log.d("ChatViewModel", "Toggle weather notifications: $enabled")
+        preferencesManager.weatherNotificationsEnabled = enabled
+        _uiState.update { it.copy(weatherNotificationsEnabled = enabled) }
+        
+        val testMode = preferencesManager.testModeEnabled
+        
+        if (enabled) {
+            if (testMode) {
+                // Используем Foreground Service
+                startWeatherService()
+            } else {
+                // Используем WorkManager
+                weatherWorkManager.scheduleWeatherNotifications(true)
+            }
+        } else {
+            if (testMode) {
+                stopWeatherService()
+            } else {
+                weatherWorkManager.scheduleWeatherNotifications(false)
+            }
+        }
+    }
+
+    private fun startWeatherService() {
+        val context = weatherWorkManager.getContext()
+        val intent = Intent(context, WeatherNotificationService::class.java).apply {
+            action = WeatherNotificationService.ACTION_START
+        }
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+            android.util.Log.d("ChatViewModel", "Weather service started")
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "Failed to start weather service", e)
+        }
+    }
+
+    private fun stopWeatherService() {
+        val context = weatherWorkManager.getContext()
+        val intent = Intent(context, WeatherNotificationService::class.java).apply {
+            action = WeatherNotificationService.ACTION_STOP
+        }
+        try {
+            context.startService(intent)
+            android.util.Log.d("ChatViewModel", "Weather service stopped")
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "Failed to stop weather service", e)
         }
     }
 
