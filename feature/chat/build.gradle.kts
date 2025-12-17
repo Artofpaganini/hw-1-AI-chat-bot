@@ -41,6 +41,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.navigation.compose)
     implementation(libs.gson)
+    implementation(libs.work.runtime.ktx)
 
     testImplementation(libs.bundles.junit)
     testImplementation(libs.mockk)
