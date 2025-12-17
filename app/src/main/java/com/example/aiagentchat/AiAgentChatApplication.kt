@@ -18,8 +18,11 @@ class AiAgentChatApplication : Application() {
         val workerFactory = GlobalContext.get().get<com.example.aiagentchat.di.WeatherWorkerFactory>()
         val configuration = Configuration.Builder()
             .setWorkerFactory(workerFactory)
+            .setMinimumLoggingLevel(android.util.Log.DEBUG) // Для отладки
             .build()
         WorkManager.initialize(this, configuration)
+        
+        android.util.Log.d("AiAgentChatApplication", "WorkManager initialized - will work even after app is killed")
     }
 }
 
