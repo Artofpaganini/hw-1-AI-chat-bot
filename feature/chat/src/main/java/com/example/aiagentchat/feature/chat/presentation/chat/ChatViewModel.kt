@@ -260,6 +260,16 @@ class ChatViewModel(
     }
 
     private fun buildMessagesWithContext(currentInput: String): List<ChatMessageDto> {
+        val enabledMcpTools = _uiState.value.enabledMcpTools
+        
+        // Если включены MCP tools, отправляем только текущий вопрос без контекста
+        if (enabledMcpTools.isNotEmpty()) {
+            return listOf(
+                ChatMessageDto(role = "user", content = currentInput)
+            )
+        }
+        
+        // Обычная логика с контекстом для случаев без MCP tools
         val sessionContext = _uiState.value.sessionContext
         val messages = mutableListOf<ChatMessageDto>()
         
