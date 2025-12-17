@@ -41,6 +41,8 @@ data class MessageMetrics(
 data class AiResponse(
     val content: String,
     val inputTokens: Int,
-    val outputTokens: Int
+    val outputTokens: Int,
+    val toolCalls: List<com.example.aiagentchat.feature.chat.data.api.ToolCallDto>? = null,
+    val finishReason: String? = null
 )
 

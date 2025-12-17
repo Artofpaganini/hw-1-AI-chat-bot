@@ -127,12 +127,18 @@ class McpRepositoryImpl(
                 )
             )
 
+            Log.d(TAG, "Calling MCP tool: $toolName")
+            Log.d(TAG, "Request params: name=$toolName, arguments=$arguments")
+            Log.d(TAG, "Full request: id=${request.id}, method=${request.method}, params=${request.params}")
+
             val authorization = context7ApiKey?.let { "Bearer $it" }
             val response = mcpApi.sendRequest(
                 authorization = authorization,
                 sessionId = sessionId,
                 request = request
             )
+            
+            Log.d(TAG, "MCP response: code=${response.code()}, isSuccessful=${response.isSuccessful}")
 
             if (response.isSuccessful && response.body() != null) {
                 val body = response.body()!!

@@ -156,8 +156,11 @@ fun main(args: Array<String>) {
             route("mcp") {
                 post {
                     try {
-                        val request = call.receive<JsonRpcRequest>()
-                        logger.log(Level.INFO, "Received request: ${request.method}")
+                        val rawBody = call.receiveText()
+                        logger.log(Level.INFO, "Received raw request body: $rawBody")
+                        
+                        val request = json.decodeFromString<JsonRpcRequest>(rawBody)
+                        logger.log(Level.INFO, "Parsed request: method=${request.method}, id=${request.id}, params=${request.params}")
                         
                         val response = when (request.method) {
                             "initialize" -> {
@@ -203,13 +206,34 @@ fun main(args: Array<String>) {
                                 )
                             }
                             "tools/call" -> {
+                                logger.log(Level.INFO, "Processing tools/call request. Params: ${request.params}")
+                                
                                 val toolName = request.params?.get("name")?.jsonPrimitive?.content
-                                val arguments = request.params?.get("arguments")?.jsonObject
+                                val argumentsElement = request.params?.get("arguments")
+                                
+                                logger.log(Level.INFO, "Tool name: $toolName, Arguments element: $argumentsElement")
+                                
+                                val arguments = when {
+                                    argumentsElement is JsonObject -> argumentsElement
+                                    argumentsElement is JsonElement -> {
+                                        logger.log(Level.INFO, "Arguments is JsonElement, converting to JsonObject")
+                                        argumentsElement.jsonObject
+                                    }
+                                    else -> {
+                                        logger.log(Level.WARNING, "Arguments is not JsonObject or JsonElement, type: ${argumentsElement?.javaClass?.simpleName}")
+                                        null
+                                    }
+                                }
+                                
+                                logger.log(Level.INFO, "Parsed arguments: $arguments")
                                 
                                 if (toolName == "get_weather") {
                                     val location = arguments?.get("location")?.jsonPrimitive?.content
                                     
+                                    logger.log(Level.INFO, "Location parameter: $location")
+                                    
                                     if (location.isNullOrBlank()) {
+                                        logger.log(Level.WARNING, "Location parameter is missing or blank")
                                         JsonRpcResponse(
                                             id = request.id,
                                             error = JsonRpcError(
@@ -338,11 +362,12 @@ fun main(args: Array<String>) {
                                         }
                                     }
                                 } else {
+                                    logger.log(Level.WARNING, "Unknown tool requested: $toolName")
                                     JsonRpcResponse(
                                         id = request.id,
                                         error = JsonRpcError(
                                             code = -32601,
-                                            message = "Method not found: $toolName"
+                                            message = "Tool not found: $toolName. Available tools: get_weather"
                                         )
                                     )
                                 }
