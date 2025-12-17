@@ -18,7 +18,11 @@ class AiModelRepositoryImpl(
         private const val TAG = "AiModelRepository"
     }
 
-    override suspend fun sendMessage(model: AiModel, messages: List<ChatMessageDto>): Result<AiResponse> {
+    override suspend fun sendMessage(
+        model: AiModel,
+        messages: List<ChatMessageDto>,
+        tools: List<com.example.aiagentchat.feature.chat.data.api.ToolDto>?
+    ): Result<AiResponse> {
         return try {
             val apiKey = authManager.getApiKey(model)
             if (apiKey.isBlank()) {
@@ -27,7 +31,14 @@ class AiModelRepositoryImpl(
             val request = ChatRequest(
                 model = model.modelId,
                 messages = messages,
+                tools = tools
             )
+            
+            if (tools != null && tools.isNotEmpty()) {
+                Log.d(TAG, "Sending request to ${model.displayName} with ${tools.size} tools: ${tools.map { it.function.name }}")
+            } else {
+                Log.d(TAG, "Sending request to ${model.displayName} without tools")
+            }
 
             val response = when (model) {
                 is AiModel.DeepSeek -> DeepSeekApi.create().sendMessage(
@@ -45,17 +56,28 @@ class AiModelRepositoryImpl(
             }
             if (response.isSuccessful && response.body() != null) {
                 val body = response.body()!!
-                val content = body.choices.firstOrNull()?.message?.content
+                val choice = body.choices.firstOrNull()
                     ?: return Result.failure(Exception("Empty response from ${model.displayName}"))
+                
+                val message = choice.message
+                val content = message.content ?: ""
+                val toolCalls = message.toolCalls
+                val finishReason = choice.finishReason
+                
+                Log.d(TAG, "Response from ${model.displayName}: finishReason=$finishReason, toolCalls=${toolCalls?.size ?: 0}, contentLength=${content.length}")
 
                 val aiResponse = AiResponse(
                     content = content,
                     inputTokens = body.usage?.promptTokens ?: 0,
-                    outputTokens = body.usage?.completionTokens ?: 0
+                    outputTokens = body.usage?.completionTokens ?: 0,
+                    toolCalls = toolCalls,
+                    finishReason = finishReason
                 )
 
                 Result.success(aiResponse)
             } else {
+                val errorBody = response.errorBody()?.string()
+                Log.e(TAG, "API Error ${response.code()}: ${response.message()}, body: $errorBody")
                 Result.failure(Exception("API Error ${response.code()}: ${response.message()}"))
             }
         } catch (e: java.net.UnknownHostException) {
