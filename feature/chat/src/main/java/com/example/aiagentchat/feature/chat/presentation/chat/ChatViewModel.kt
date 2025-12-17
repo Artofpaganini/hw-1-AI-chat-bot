@@ -290,12 +290,15 @@ class ChatViewModel(
         }
         
         // Планируем задачу если уведомления уже были включены
-        if (enabled) {
-            if (testMode) {
-                startWeatherService()
-            } else {
-                weatherWorkManager.scheduleWeatherNotifications(true)
-            }
+        // WorkManager сохраняет задачи даже после перезагрузки устройства
+        if (enabled && !testMode) {
+            // Используем WorkManager только если не включен test mode
+            // WorkManager работает даже когда приложение убито
+            weatherWorkManager.scheduleWeatherNotifications(true)
+            android.util.Log.d("ChatViewModel", "WorkManager scheduled on app start")
+        } else if (enabled && testMode) {
+            // Test mode использует Foreground Service
+            startWeatherService()
         }
     }
 

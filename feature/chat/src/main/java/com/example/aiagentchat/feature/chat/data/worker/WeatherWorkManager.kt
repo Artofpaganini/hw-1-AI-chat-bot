@@ -22,8 +22,13 @@ class WeatherWorkManager(private val context: Context) {
         val workManager = WorkManager.getInstance(context)
 
         if (enabled) {
+            // Constraints для надежной работы даже после перезагрузки устройства
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
+                .setRequiresBatteryNotLow(false) // Работать даже при низком заряде
+                .setRequiresCharging(false) // Работать без зарядки
+                .setRequiresDeviceIdle(false) // Работать даже когда устройство активно
+                .setRequiresStorageNotLow(false) // Работать даже при нехватке места
                 .build()
 
             val workRequest = PeriodicWorkRequestBuilder<WeatherNotificationWorker>(
@@ -32,6 +37,7 @@ class WeatherWorkManager(private val context: Context) {
             )
                 .setConstraints(constraints)
                 .addTag("weather_notifications")
+                .setInitialDelay(REPEAT_INTERVAL, TimeUnit.MINUTES) // Первый запуск через 15 минут
                 .build()
 
             workManager.enqueueUniquePeriodicWork(

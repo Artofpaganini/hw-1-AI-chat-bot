@@ -5,7 +5,6 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.aiagentchat.core.common.preferences.PreferencesManager
-import com.example.aiagentchat.core.common.utils.AppStateHelper
 import com.example.aiagentchat.feature.chat.data.notification.NotificationManager
 import com.example.aiagentchat.feature.chat.data.storage.WeatherDataStorage
 import com.example.aiagentchat.feature.chat.domain.model.AiModel
@@ -36,22 +35,8 @@ class WeatherNotificationWorker(
                 return Result.success()
             }
 
-            // Проверка: работаем только когда приложение в фоне или убито
-            // WorkManager уже работает в фоне, но для дополнительной проверки
-            // можно проверить состояние приложения
-            try {
-                val isForeground = AppStateHelper.isAppInForeground(applicationContext)
-                if (isForeground) {
-                    Log.d(TAG, "App is in foreground, skipping worker execution")
-                    // Не завершаем задачу, а просто пропускаем выполнение
-                    // Это позволит задаче выполниться позже, когда приложение будет в фоне
-                    return Result.success()
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Error checking app state, continuing execution", e)
-                // При ошибке продолжаем выполнение
-            }
-
+            // WorkManager работает в фоне и после перезагрузки устройства
+            // Не проверяем состояние приложения, так как WorkManager гарантирует работу в фоне
             val lastUserQuery = preferencesManager.lastUserQuery
             if (lastUserQuery.isNullOrBlank()) {
                 Log.d(TAG, "No last user query found, skipping")
