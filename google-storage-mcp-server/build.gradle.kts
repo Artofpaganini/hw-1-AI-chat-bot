@@ -16,18 +16,22 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.0")
+    // Google Drive API
+    implementation("com.google.api-client:google-api-client:2.2.0")
+    implementation("com.google.oauth-client:google-oauth-client-jetty:1.34.1")
+    implementation("com.google.apis:google-api-services-drive:v3-rev20220815-2.0.0")
 }
 
 application {
-    mainClass.set("com.example.mcpserver.WeatherMcpServerSimpleKt")
+    mainClass.set("com.example.googlestoragemcpserver.GoogleStorageMcpServerKt")
 }
 
 tasks.jar {
-    archiveBaseName.set("mcp-server")
+    archiveBaseName.set("google-storage-mcp-server")
     archiveVersion.set("1.0.0")
     
     manifest {
-        attributes["Main-Class"] = "com.example.mcpserver.WeatherMcpServerSimpleKt"
+        attributes["Main-Class"] = "com.example.googlestoragemcpserver.GoogleStorageMcpServerKt"
     }
     
     from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
@@ -39,12 +43,12 @@ tasks.jar {
 }
 
 tasks.register<Jar>("fatJar") {
-    archiveBaseName.set("mcp-server")
+    archiveBaseName.set("google-storage-mcp-server")
     archiveVersion.set("1.0.0")
     archiveClassifier.set("all")
     
     manifest {
-        attributes["Main-Class"] = "com.example.mcpserver.WeatherMcpServerSimpleKt"
+        attributes["Main-Class"] = "com.example.googlestoragemcpserver.GoogleStorageMcpServerKt"
     }
     
     from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })

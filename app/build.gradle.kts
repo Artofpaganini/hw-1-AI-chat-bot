@@ -44,6 +44,12 @@ android {
         buildConfigField("Double", "GPT_4O_MINI_OUTPUT_PRICE", "0.60")
         buildConfigField("Double", "GEMINI_PRO_15_INPUT_PRICE", "1.25")
         buildConfigField("Double", "GEMINI_PRO_15_OUTPUT_PRICE", "5.00")
+
+        val googleDriveClientId = localProperties.getProperty("GOOGLE_DRIVE_CLIENT_ID") ?: "EMPTY GOOGLE DRIVE CLIENT ID"
+        buildConfigField("String", "GOOGLE_DRIVE_CLIENT_ID", "\"$googleDriveClientId\"")
+        
+        val googleDriveAccessToken = localProperties.getProperty("GOOGLE_DRIVE_ACCESS_TOKEN") ?: ""
+        buildConfigField("String", "GOOGLE_DRIVE_ACCESS_TOKEN", "\"$googleDriveAccessToken\"")
     }
 
     buildTypes {

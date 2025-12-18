@@ -2,6 +2,7 @@ package com.example.aiagentchat.feature.chat.presentation.chat
 
 import com.example.aiagentchat.feature.chat.domain.model.AiModel
 import com.example.aiagentchat.feature.chat.domain.model.McpTool
+import com.example.aiagentchat.feature.chat.domain.model.McpServer
 import com.example.aiagentchat.feature.chat.domain.model.SessionContext
 import com.example.aiagentchat.feature.chat.domain.model.Message
 import com.example.aiagentchat.feature.chat.domain.usecase.MetricsComparison
@@ -19,6 +20,8 @@ data class ChatUiState(
     val sessionContext: SessionContext = SessionContext(),
     val mcpTools: List<McpTool> = emptyList(),
     val enabledMcpTools: Set<String> = emptySet(),
+    val mcpServers: List<McpServer> = emptyList(),
+    val enabledMcpServerTools: Map<String, Set<String>> = emptyMap(), // serverId -> Set<toolName>
     val showMcpToolsDialog: Boolean = false,
     val weatherNotificationsEnabled: Boolean = false,
     val testModeEnabled: Boolean = false
@@ -36,6 +39,7 @@ sealed interface ChatAction {
     data object ShowMcpTools : ChatAction
     data object DismissMcpTools : ChatAction
     data class ToggleMcpTool(val toolName: String, val enabled: Boolean) : ChatAction
+    data class ToggleMcpServerTool(val serverId: String, val toolName: String, val enabled: Boolean) : ChatAction
     data class ToggleWeatherNotifications(val enabled: Boolean) : ChatAction
     data class ToggleTestMode(val enabled: Boolean) : ChatAction
 }

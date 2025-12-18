@@ -1,4 +1,4 @@
-package com.example.mcpserver
+package com.example.weathermcpserver
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.HttpMethod

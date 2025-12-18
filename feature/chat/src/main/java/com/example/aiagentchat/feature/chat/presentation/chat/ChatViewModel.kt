@@ -11,6 +11,8 @@ import com.example.aiagentchat.feature.chat.domain.model.SessionContext
 import com.example.aiagentchat.feature.chat.domain.repository.AiModelRepository
 import com.example.aiagentchat.feature.chat.domain.repository.ChatRepository
 import com.example.aiagentchat.feature.chat.domain.repository.McpRepository
+import com.example.aiagentchat.feature.chat.domain.repository.MultiMcpRepository
+import com.example.aiagentchat.feature.chat.domain.model.McpServer
 import com.example.aiagentchat.feature.chat.domain.usecase.CompareModelMetricsUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.CompressionScheduler
 import com.example.aiagentchat.feature.chat.domain.usecase.ContextInitializer
@@ -38,6 +40,7 @@ class ChatViewModel(
     private val compressionScheduler: CompressionScheduler,
     private val contextInitializer: ContextInitializer,
     private val mcpRepository: McpRepository,
+    private val multiMcpRepository: MultiMcpRepository,
     private val preferencesManager: com.example.aiagentchat.core.common.preferences.PreferencesManager,
     private val weatherWorkManager: com.example.aiagentchat.feature.chat.data.worker.WeatherWorkManager
 ) : ViewModel() {
@@ -57,8 +60,10 @@ class ChatViewModel(
         loadSessionContext()
         observeContextSummaries()
         observeMcpTools()
+        observeMcpServers()
         loadWeatherNotificationsState()
         loadEnabledMcpTools()
+        loadEnabledMcpServerTools()
         loadTestModeState()
     }
 
@@ -75,6 +80,7 @@ class ChatViewModel(
             is ChatAction.ShowMcpTools -> handleShowMcpTools()
             is ChatAction.DismissMcpTools -> handleDismissMcpTools()
             is ChatAction.ToggleMcpTool -> handleToggleMcpTool(action.toolName, action.enabled)
+            is ChatAction.ToggleMcpServerTool -> handleToggleMcpServerTool(action.serverId, action.toolName, action.enabled)
             is ChatAction.ToggleWeatherNotifications -> handleToggleWeatherNotifications(action.enabled)
             is ChatAction.ToggleTestMode -> handleToggleTestMode(action.enabled)
         }
@@ -163,7 +169,8 @@ class ChatViewModel(
             sendMessageUseCase(
                 model = _uiState.value.selectedModel,
                 messages = messagesWithContext,
-                enabledMcpTools = _uiState.value.enabledMcpTools
+                enabledMcpTools = _uiState.value.enabledMcpTools,
+                enabledMcpServerTools = _uiState.value.enabledMcpServerTools
             )
                 .onSuccess { aiMessage ->
                     chatRepository.saveMessage(aiMessage)
@@ -249,9 +256,23 @@ class ChatViewModel(
         }
     }
 
+    private fun observeMcpServers() {
+        viewModelScope.launch {
+            multiMcpRepository.observeServers().collect { servers ->
+                _uiState.update { it.copy(mcpServers = servers) }
+            }
+        }
+    }
+
     private fun handleShowMcpTools() {
         viewModelScope.launch {
-            mcpRepository.listTools()
+            // Load tools for all servers
+            val servers = multiMcpRepository.listServers()
+            servers.forEach { server ->
+                multiMcpRepository.listToolsForServer(server.id).onSuccess { tools ->
+                    // Tools are automatically updated in the server via observeServers
+                }
+            }
             _uiState.update { it.copy(showMcpToolsDialog = true) }
         }
     }
@@ -265,6 +286,11 @@ class ChatViewModel(
         _uiState.update { it.copy(enabledMcpTools = enabledTools) }
     }
 
+    private fun loadEnabledMcpServerTools() {
+        val enabledServerTools = preferencesManager.getEnabledMcpServerTools()
+        _uiState.update { it.copy(enabledMcpServerTools = enabledServerTools) }
+    }
+
     private fun handleToggleMcpTool(toolName: String, enabled: Boolean) {
         _uiState.update { state ->
             val newEnabled = if (enabled) {
@@ -275,6 +301,26 @@ class ChatViewModel(
             val updatedState = state.copy(enabledMcpTools = newEnabled)
             // Сохраняем состояние в PreferencesManager
             preferencesManager.setEnabledMcpTools(newEnabled)
+            updatedState
+        }
+    }
+    
+    private fun handleToggleMcpServerTool(serverId: String, toolName: String, enabled: Boolean) {
+        _uiState.update { state ->
+            val currentServerTools = state.enabledMcpServerTools.toMutableMap()
+            val serverTools = currentServerTools[serverId]?.toMutableSet() ?: mutableSetOf()
+            
+            if (enabled) {
+                serverTools.add(toolName)
+            } else {
+                serverTools.remove(toolName)
+            }
+            
+            currentServerTools[serverId] = serverTools
+            val updatedState = state.copy(enabledMcpServerTools = currentServerTools)
+            
+            // Сохраняем состояние в PreferencesManager
+            preferencesManager.setEnabledToolsForServer(serverId, serverTools)
             updatedState
         }
     }

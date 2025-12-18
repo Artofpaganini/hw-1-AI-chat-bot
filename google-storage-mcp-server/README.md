@@ -1,6 +1,6 @@
-# MCP Weather Server
+# Weather MCP Server
 
-MCP сервер для получения информации о погоде через OpenWeatherMap API с поддержкой HTTP транспорта (JSON-RPC).
+MCP сервер для получения информации о погоде через Weather.gov API с поддержкой HTTP транспорта (JSON-RPC).
 
 ## Требования
 
@@ -12,11 +12,11 @@ MCP сервер для получения информации о погоде 
 ### Создание Fat JAR (со всеми зависимостями)
 
 ```bash
-cd mcp-server
-../gradlew :mcp-server:fatJar
+cd weather-mcp-server
+../gradlew :weather-mcp-server:fatJar
 ```
 
-Fat JAR файл будет создан в `build/libs/mcp-server-1.0.0-all.jar`
+Fat JAR файл будет создан в `build/libs/weather-mcp-server-1.0.0-all.jar`
 
 **Важно:** Используйте именно `fatJar` задачу, так как она создает JAR со всеми зависимостями, необходимыми для запуска.
 
@@ -28,15 +28,15 @@ Fat JAR файл будет создан в `build/libs/mcp-server-1.0.0-all.jar
 
 ### Вариант 1: Использование скрипта (рекомендуется)
 ```bash
-cd mcp-server
+cd weather-mcp-server
 ./start-server.sh [port]
 ```
 
 ### Вариант 2: Ручной запуск
 ```bash
-cd mcp-server
-../gradlew :mcp-server:fatJar
-java -jar build/libs/mcp-server-1.0.0-all.jar [port]
+cd weather-mcp-server
+../gradlew :weather-mcp-server:fatJar
+java -jar build/libs/weather-mcp-server-1.0.0-all.jar [port]
 ```
 
 По умолчанию используется порт 8080, если не указан другой.
@@ -47,7 +47,7 @@ MCP endpoint доступен по адресу: `http://localhost:8080/mcp` (и
 
 **Важно:** Убедитесь, что вы пересобрали JAR файл после изменений:
 ```bash
-../gradlew :mcp-server:fatJar
+../gradlew :weather-mcp-server:fatJar
 ```
 
 ## Использование Weather.gov API
@@ -62,11 +62,11 @@ API не требует ключа, но требует указания User-Ag
 
 Для запуска на Android эмуляторе:
 
-1. Соберите и запустите MCP сервер на хосте:
+1. Соберите и запустите Weather MCP сервер на хосте:
 ```bash
-cd mcp-server
-../gradlew :mcp-server:fatJar
-java -jar build/libs/mcp-server-1.0.0-all.jar 8080
+cd weather-mcp-server
+../gradlew :weather-mcp-server:fatJar
+java -jar build/libs/weather-mcp-server-1.0.0-all.jar 8080
 ```
 
 2. В Android приложении используйте URL: `http://10.0.2.2:8080/mcp`
@@ -89,14 +89,14 @@ MCP_SERVER_URL=http://10.0.2.2:8080/
       "command": "java",
       "args": [
         "-jar",
-        "/absolute/path/to/mcp-server/build/libs/mcp-server-1.0.0-all.jar"
+        "/absolute/path/to/weather-mcp-server/build/libs/weather-mcp-server-1.0.0-all.jar"
       ],
     }
   }
 }
 ```
 
-Замените `/absolute/path/to/mcp-server` на абсолютный путь к директории mcp-server в вашем проекте.
+Замените `/absolute/path/to/weather-mcp-server` на абсолютный путь к директории weather-mcp-server в вашем проекте.
 
 ## Инструменты
 

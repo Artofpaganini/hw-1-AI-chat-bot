@@ -163,6 +163,11 @@ fun HomeScreen(
             testModeEnabled = state.testModeEnabled,
             onTestModeToggle = { enabled ->
                 viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleTestMode(enabled))
+            },
+            mcpServers = state.mcpServers,
+            enabledMcpServerTools = state.enabledMcpServerTools,
+            onServerToolToggle = { serverId, toolName, enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleMcpServerTool(serverId, toolName, enabled))
             }
         )
     }

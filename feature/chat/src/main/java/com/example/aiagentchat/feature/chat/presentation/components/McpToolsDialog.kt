@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import com.example.aiagentchat.feature.chat.domain.model.McpTool
+import com.example.aiagentchat.feature.chat.domain.model.McpServer
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,7 +45,10 @@ fun McpToolsDialog(
     weatherNotificationsEnabled: Boolean = false,
     onWeatherNotificationsToggle: (Boolean) -> Unit = {},
     testModeEnabled: Boolean = false,
-    onTestModeToggle: (Boolean) -> Unit = {}
+    onTestModeToggle: (Boolean) -> Unit = {},
+    mcpServers: List<McpServer> = emptyList(),
+    enabledMcpServerTools: Map<String, Set<String>> = emptyMap(),
+    onServerToolToggle: (String, String, Boolean) -> Unit = { _, _, _ -> }
 ) {
     BasicAlertDialog(
         onDismissRequest = onDismiss,
@@ -88,48 +92,58 @@ fun McpToolsDialog(
                     )
                 }
             ) { paddingValues ->
-                if (tools.isEmpty()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(paddingValues)
-                            .padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = "No MCP tools available",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(paddingValues),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    item {
+                        WeatherNotificationItem(
+                            enabled = weatherNotificationsEnabled,
+                            onToggle = onWeatherNotificationsToggle
                         )
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(paddingValues),
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        item {
-                            WeatherNotificationItem(
-                                enabled = weatherNotificationsEnabled,
-                                onToggle = onWeatherNotificationsToggle
-                            )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                        )
+                        TestModeItem(
+                            enabled = testModeEnabled,
+                            onToggle = onTestModeToggle
+                        )
+                        if (mcpServers.isNotEmpty()) {
                             HorizontalDivider(
                                 modifier = Modifier.padding(vertical = 8.dp),
                                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
                             )
-                            TestModeItem(
-                                enabled = testModeEnabled,
-                                onToggle = onTestModeToggle
-                            )
-                            if (tools.isNotEmpty()) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(vertical = 8.dp),
-                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                                )
+                        }
+                    }
+                    
+                    // Display MCP Servers with their tools
+                    items(mcpServers, key = { it.id }) { server ->
+                        McpServerItem(
+                            server = server,
+                            enabledTools = enabledMcpServerTools[server.id] ?: emptySet(),
+                            onToolToggle = { toolName, enabled ->
+                                onServerToolToggle(server.id, toolName, enabled)
                             }
+                        )
+                        if (server != mcpServers.last()) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                            )
+                        }
+                    }
+                    
+                    // Legacy: Display old tools if any
+                    if (tools.isNotEmpty() && mcpServers.isEmpty()) {
+                        item {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                            )
                         }
                         items(tools, key = { it.name }) { tool ->
                             McpToolItem(
@@ -286,6 +300,92 @@ private fun TestModeItem(
                     checked = enabled,
                     onCheckedChange = onToggle
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun McpServerItem(
+    server: McpServer,
+    enabledTools: Set<String>,
+    onToolToggle: (String, Boolean) -> Unit
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            Text(
+                text = server.name,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "${server.getFullUrl()}/mcp",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            
+            if (server.tools.isEmpty()) {
+                Text(
+                    text = "No tools available",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            } else {
+                Column(
+                    modifier = Modifier.padding(top = 8.dp)
+                ) {
+                    server.tools.forEach { tool ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    text = tool.name,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                tool.description?.let { description ->
+                                    Text(
+                                        text = description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 2.dp)
+                                    )
+                                }
+                            }
+                            Switch(
+                                checked = enabledTools.contains(tool.name),
+                                onCheckedChange = { enabled ->
+                                    onToolToggle(tool.name, enabled)
+                                }
+                            )
+                        }
+                        if (tool != server.tools.last()) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(vertical = 4.dp),
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
+                            )
+                        }
+                    }
+                }
             }
         }
     }

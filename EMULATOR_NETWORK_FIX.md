@@ -88,5 +88,5 @@ emulator -avd <your_avd_name> -wipe-data
 1. Проверьте, что на хосте есть интернет
 2. Перезапустите эмулятор
 3. Проверьте логи приложения на наличие ошибок DNS
-4. Убедитесь, что в `local.properties` правильно указан `MCP_SERVER_URL`
+4. Убедитесь, что MCP серверы запущены (Weather MCP Server на порту 8080, Google Storage MCP Server на порту 8081)
 

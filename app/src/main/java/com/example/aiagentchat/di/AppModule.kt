@@ -92,8 +92,14 @@ val appModule = module {
             gson = get()
         )
     }
+    
+    single<com.example.aiagentchat.feature.chat.domain.repository.MultiMcpRepository> {
+        com.example.aiagentchat.feature.chat.data.repository.MultiMcpRepositoryImpl(
+            gson = get()
+        )
+    }
 
-    factory { SendMessageUseCase(get(), get(), get()) }
+    factory { SendMessageUseCase(get(), get(), get(), get(), get<com.example.aiagentchat.core.common.preferences.PreferencesManager>(), get<Gson>()) }
     factory { SwitchAiModelUseCase(get()) }
     factory { CompareModelMetricsUseCase() }
     factory { ExportChatHistoryUseCase() }
@@ -140,6 +146,7 @@ val appModule = module {
             compressionScheduler = get(),
             contextInitializer = get(),
             mcpRepository = get(),
+            multiMcpRepository = get(),
             preferencesManager = get(),
             weatherWorkManager = get()
         )
