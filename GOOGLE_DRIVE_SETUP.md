@@ -165,14 +165,7 @@ gcloud auth application-default login --scopes=https://www.googleapis.com/auth/d
 После получения access token, добавьте его в файл `local.properties`:
 
 1. **Откройте файл `local.properties`** в корне проекта
-2. **Добавьте строку:**
-   ```properties
-
-   access_token=your_access_token_here
-
-   ```
-   (Замените на ваш реальный access token)
-
+2. **Добавьте строку access_token в него:**
 3. **Пересоберите приложение:**
    ```bash
    ./gradlew clean assembleDebug
