@@ -190,15 +190,15 @@ class SendMessageUseCase(
         iteration: Int
     ): Result<Message> {
         val updatedMessages = currentMessages.toMutableList()
-        var weatherData: String? = null
-        
+        val weatherDataList = mutableListOf<String>()
+
         toolCalls.forEach { toolCall ->
             val toolName = toolCall.function.name
             val argumentsJson = toolCall.function.arguments
             val arguments = McpToolConverter.parseToolCallArguments(argumentsJson)
-            
+
             Log.d(TAG, "Calling MCP tool: $toolName with arguments: $arguments")
-            
+
             // Determine which server to use for this tool
             val serverId = findServerForTool(toolName, enabledMcpServerTools)
             val toolResult = if (serverId != null) {
@@ -208,12 +208,12 @@ class SendMessageUseCase(
                 // Fallback to legacy McpRepository
                 mcpRepository.callTool(toolName, arguments)
             }
-            
+
             val toolResultContent = if (toolResult.isSuccess) {
                 val result = toolResult.getOrNull() ?: "Tool execution completed"
                 // Store weather data if this is get_weather tool
                 if (toolName == "get_weather") {
-                    weatherData = result
+                    weatherDataList.add(result)
                 }
                 result
             } else {
@@ -221,7 +221,7 @@ class SendMessageUseCase(
                 Log.e(TAG, "Tool call failed: $toolName", error)
                 "Error: ${error?.message ?: "Unknown error"}"
             }
-            
+
             updatedMessages.add(
                 ChatMessageDto(
                     role = "assistant",
@@ -229,7 +229,7 @@ class SendMessageUseCase(
                     toolCalls = listOf(toolCall)
                 )
             )
-            
+
             updatedMessages.add(
                 ChatMessageDto(
                     role = "tool",
@@ -238,14 +238,15 @@ class SendMessageUseCase(
                 )
             )
         }
-        
+
         // After processing tool calls, if we have weather data and save_to_drive is enabled, save it
-        if (weatherData != null) {
+        val weatherDataToSave = weatherDataList.lastOrNull()
+        if (weatherDataToSave != null) {
             val googleStorageServerId = McpServer.GOOGLE_STORAGE_SERVER_ID
             val googleStorageTools = enabledMcpServerTools[googleStorageServerId] ?: emptySet()
             if (googleStorageTools.contains("save_to_drive")) {
                 Log.d(TAG, "Weather data received, attempting to save to Google Drive")
-                saveWeatherDataToDrive(weatherData, updatedMessages)
+                saveWeatherDataToDrive(weatherDataToSave)
             }
         }
         
@@ -256,7 +257,7 @@ class SendMessageUseCase(
         return enabledMcpServerTools.entries.find { (_, tools) -> tools.contains(toolName) }?.key
     }
     
-    private suspend fun saveWeatherDataToDrive(weatherData: String, messages: List<ChatMessageDto>) {
+    private suspend fun saveWeatherDataToDrive(weatherData: String) {
         try {
             // Get access token from PreferencesManager (initialized from BuildConfig in Application class)
             val accessToken = preferencesManager.googleDriveAccessToken
@@ -278,7 +279,26 @@ class SendMessageUseCase(
             val googleStorageServer = servers.find { it.id == McpServer.GOOGLE_STORAGE_SERVER_ID }
             
             if (googleStorageServer != null) {
-                Log.d(TAG, "Saving weather data to Google Drive")
+                // Strategy: Delete existing file, then create new one with updated data
+                // This ensures file is always overwritten with latest data
+                Log.d(TAG, "Deleting existing file 'ai-chat-results' from Google Drive (if exists)")
+                val deleteResult = multiMcpRepository.callTool(
+                    serverId = McpServer.GOOGLE_STORAGE_SERVER_ID,
+                    toolName = "delete_file_from_drive",
+                    arguments = mapOf(
+                        "accessToken" to accessToken,
+                        "fileName" to "ai-chat-results"
+                    )
+                )
+                
+                if (deleteResult.isSuccess) {
+                    Log.d(TAG, "File deleted successfully (or did not exist)")
+                } else {
+                    Log.w(TAG, "Failed to delete file (may not exist): ${deleteResult.exceptionOrNull()?.message}")
+                }
+                
+                // Create new file with updated data
+                Log.d(TAG, "Creating new file 'ai-chat-results' with updated weather data")
                 val saveResult = multiMcpRepository.callTool(
                     serverId = McpServer.GOOGLE_STORAGE_SERVER_ID,
                     toolName = "save_to_drive",

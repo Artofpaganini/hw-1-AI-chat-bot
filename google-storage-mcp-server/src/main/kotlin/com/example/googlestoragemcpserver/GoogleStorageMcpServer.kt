@@ -175,6 +175,37 @@ private fun updateFile(
     }
 }
 
+private fun deleteFile(
+    fileId: String,
+    accessToken: String,
+    httpClient: OkHttpClient,
+    logger: Logger
+): Result<Unit> {
+    return try {
+        val deleteUrl = "https://www.googleapis.com/drive/v3/files/$fileId"
+        
+        val request = Request.Builder()
+            .url(deleteUrl)
+            .header("Authorization", "Bearer $accessToken")
+            .delete()
+            .build()
+        
+        val response = httpClient.newCall(request).execute()
+        
+        if (response.isSuccessful) {
+            logger.log(Level.INFO, "File deleted: $fileId")
+            Result.success(Unit)
+        } else {
+            val errorBody = response.body?.string() ?: ""
+            logger.log(Level.WARNING, "Failed to delete file: ${response.code} - $errorBody")
+            Result.failure(Exception("Failed to delete file: ${response.code} - $errorBody"))
+        }
+    } catch (e: Exception) {
+        logger.log(Level.SEVERE, "Error deleting file", e)
+        Result.failure(e)
+    }
+}
+
 fun main(args: Array<String>) {
     val logger = Logger.getLogger("GoogleStorageMcpServer")
     val port = args.getOrNull(0)?.toIntOrNull() ?: 8081
@@ -228,9 +259,10 @@ fun main(args: Array<String>) {
                                     id = request.id,
                                     result = buildJsonObject {
                                         putJsonArray("tools") {
+                                            // save_to_drive - создает или обновляет файл
                                             addJsonObject {
                                                 put("name", "save_to_drive")
-                                                put("description", "Save JSON data to Google Drive. If file 'ai-chat-results' exists, it will be overwritten. Otherwise, a new file will be created.")
+                                                put("description", "Save JSON data to Google Drive. If file exists, it will be overwritten. Otherwise, a new file will be created.")
                                                 putJsonObject("inputSchema") {
                                                     put("type", "object")
                                                     putJsonObject("properties") {
@@ -250,6 +282,53 @@ fun main(args: Array<String>) {
                                                     putJsonArray("required") {
                                                         add("accessToken")
                                                         add("data")
+                                                    }
+                                                }
+                                            }
+                                            // update_file_in_drive - обновляет содержимое существующего файла
+                                            addJsonObject {
+                                                put("name", "update_file_in_drive")
+                                                put("description", "Update content of an existing file in Google Drive. File must exist.")
+                                                putJsonObject("inputSchema") {
+                                                    put("type", "object")
+                                                    putJsonObject("properties") {
+                                                        putJsonObject("accessToken") {
+                                                            put("type", "string")
+                                                            put("description", "Google Drive API access token (OAuth 2.0)")
+                                                        }
+                                                        putJsonObject("fileName") {
+                                                            put("type", "string")
+                                                            put("description", "Name of the file to update (default: 'ai-chat-results')")
+                                                        }
+                                                        putJsonObject("data") {
+                                                            put("type", "string")
+                                                            put("description", "New JSON data to replace file content")
+                                                        }
+                                                    }
+                                                    putJsonArray("required") {
+                                                        add("accessToken")
+                                                        add("data")
+                                                    }
+                                                }
+                                            }
+                                            // delete_file_from_drive - удаляет файл из Google Drive
+                                            addJsonObject {
+                                                put("name", "delete_file_from_drive")
+                                                put("description", "Delete a file from Google Drive by name.")
+                                                putJsonObject("inputSchema") {
+                                                    put("type", "object")
+                                                    putJsonObject("properties") {
+                                                        putJsonObject("accessToken") {
+                                                            put("type", "string")
+                                                            put("description", "Google Drive API access token (OAuth 2.0)")
+                                                        }
+                                                        putJsonObject("fileName") {
+                                                            put("type", "string")
+                                                            put("description", "Name of the file to delete (default: 'ai-chat-results')")
+                                                        }
+                                                    }
+                                                    putJsonArray("required") {
+                                                        add("accessToken")
                                                     }
                                                 }
                                             }
@@ -367,13 +446,183 @@ fun main(args: Array<String>) {
                                             )
                                         }
                                     }
+                                } else if (toolName == "update_file_in_drive") {
+                                    val accessToken = arguments?.get("accessToken")?.jsonPrimitive?.content
+                                    val fileName = arguments?.get("fileName")?.jsonPrimitive?.content ?: "ai-chat-results"
+                                    val data = arguments?.get("data")?.jsonPrimitive?.content
+                                    
+                                    logger.log(Level.INFO, "Update file in drive: fileName=$fileName, data length=${data?.length ?: 0}")
+                                    
+                                    if (accessToken.isNullOrBlank()) {
+                                        logger.log(Level.WARNING, "Access token is missing or blank")
+                                        JsonRpcResponse(
+                                            id = request.id,
+                                            error = JsonRpcError(
+                                                code = -32602,
+                                                message = "accessToken parameter is required"
+                                            )
+                                        )
+                                    } else if (data.isNullOrBlank()) {
+                                        logger.log(Level.WARNING, "Data is missing or blank")
+                                        JsonRpcResponse(
+                                            id = request.id,
+                                            error = JsonRpcError(
+                                                code = -32602,
+                                                message = "data parameter is required"
+                                            )
+                                        )
+                                    } else {
+                                        try {
+                                            val existingFileId = findFileByName(fileName, accessToken, httpClient, json, logger)
+                                            
+                                            if (existingFileId == null) {
+                                                JsonRpcResponse(
+                                                    id = request.id,
+                                                    result = buildJsonObject {
+                                                        putJsonArray("content") {
+                                                            addJsonObject {
+                                                                put("type", "text")
+                                                                put("text", "Error: File '$fileName' not found in Google Drive")
+                                                            }
+                                                        }
+                                                        put("isError", true)
+                                                    }
+                                                )
+                                            } else {
+                                                val result = updateFile(existingFileId, data, accessToken, httpClient, logger)
+                                                
+                                                if (result.isSuccess) {
+                                                    JsonRpcResponse(
+                                                        id = request.id,
+                                                        result = buildJsonObject {
+                                                            putJsonArray("content") {
+                                                                addJsonObject {
+                                                                    put("type", "text")
+                                                                    put("text", "File '$fileName' updated successfully in Google Drive")
+                                                                }
+                                                            }
+                                                            put("isError", false)
+                                                        }
+                                                    )
+                                                } else {
+                                                    val error = result.exceptionOrNull()
+                                                    JsonRpcResponse(
+                                                        id = request.id,
+                                                        result = buildJsonObject {
+                                                            putJsonArray("content") {
+                                                                addJsonObject {
+                                                                    put("type", "text")
+                                                                    put("text", "Error: ${error?.message ?: "Unknown error occurred"}")
+                                                                }
+                                                            }
+                                                            put("isError", true)
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            logger.log(Level.SEVERE, "Error in update_file_in_drive", e)
+                                            JsonRpcResponse(
+                                                id = request.id,
+                                                result = buildJsonObject {
+                                                    putJsonArray("content") {
+                                                        addJsonObject {
+                                                            put("type", "text")
+                                                            put("text", "Error: ${e.message ?: "Unknown error occurred"}")
+                                                        }
+                                                    }
+                                                    put("isError", true)
+                                                }
+                                            )
+                                        }
+                                    }
+                                } else if (toolName == "delete_file_from_drive") {
+                                    val accessToken = arguments?.get("accessToken")?.jsonPrimitive?.content
+                                    val fileName = arguments?.get("fileName")?.jsonPrimitive?.content ?: "ai-chat-results"
+                                    
+                                    logger.log(Level.INFO, "Delete file from drive: fileName=$fileName")
+                                    
+                                    if (accessToken.isNullOrBlank()) {
+                                        logger.log(Level.WARNING, "Access token is missing or blank")
+                                        JsonRpcResponse(
+                                            id = request.id,
+                                            error = JsonRpcError(
+                                                code = -32602,
+                                                message = "accessToken parameter is required"
+                                            )
+                                        )
+                                    } else {
+                                        try {
+                                            val existingFileId = findFileByName(fileName, accessToken, httpClient, json, logger)
+                                            
+                                            if (existingFileId == null) {
+                                                JsonRpcResponse(
+                                                    id = request.id,
+                                                    result = buildJsonObject {
+                                                        putJsonArray("content") {
+                                                            addJsonObject {
+                                                                put("type", "text")
+                                                                put("text", "File '$fileName' not found in Google Drive (may already be deleted)")
+                                                            }
+                                                        }
+                                                        put("isError", false)
+                                                    }
+                                                )
+                                            } else {
+                                                val result = deleteFile(existingFileId, accessToken, httpClient, logger)
+                                                
+                                                if (result.isSuccess) {
+                                                    JsonRpcResponse(
+                                                        id = request.id,
+                                                        result = buildJsonObject {
+                                                            putJsonArray("content") {
+                                                                addJsonObject {
+                                                                    put("type", "text")
+                                                                    put("text", "File '$fileName' deleted successfully from Google Drive")
+                                                                }
+                                                            }
+                                                            put("isError", false)
+                                                        }
+                                                    )
+                                                } else {
+                                                    val error = result.exceptionOrNull()
+                                                    JsonRpcResponse(
+                                                        id = request.id,
+                                                        result = buildJsonObject {
+                                                            putJsonArray("content") {
+                                                                addJsonObject {
+                                                                    put("type", "text")
+                                                                    put("text", "Error: ${error?.message ?: "Unknown error occurred"}")
+                                                                }
+                                                            }
+                                                            put("isError", true)
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            logger.log(Level.SEVERE, "Error in delete_file_from_drive", e)
+                                            JsonRpcResponse(
+                                                id = request.id,
+                                                result = buildJsonObject {
+                                                    putJsonArray("content") {
+                                                        addJsonObject {
+                                                            put("type", "text")
+                                                            put("text", "Error: ${e.message ?: "Unknown error occurred"}")
+                                                        }
+                                                    }
+                                                    put("isError", true)
+                                                }
+                                            )
+                                        }
+                                    }
                                 } else {
                                     logger.log(Level.WARNING, "Unknown tool requested: $toolName")
                                     JsonRpcResponse(
                                         id = request.id,
                                         error = JsonRpcError(
                                             code = -32601,
-                                            message = "Tool not found: $toolName. Available tools: save_to_drive"
+                                            message = "Tool not found: $toolName. Available tools: save_to_drive, update_file_in_drive, delete_file_from_drive"
                                         )
                                     )
                                 }

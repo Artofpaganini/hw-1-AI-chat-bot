@@ -53,61 +53,23 @@ GOOGLE_DRIVE_ACCESS_TOKEN=your_google_drive_access_token_here
 
 ## MCP Серверы
 
-Проект поддерживает работу с несколькими MCP (Model Context Protocol) серверами:
+Проект поддерживает работу с несколькими MCP (Model Context Protocol) серверами. Подробная документация по каждому серверу находится в соответствующих README файлах:
 
-### Weather MCP Server
+- **Weather MCP Server** - см. [weather-mcp-server/README.md](weather-mcp-server/README.md)
+- **Google Storage MCP Server** - см. [google-storage-mcp-server/README.md](google-storage-mcp-server/README.md)
 
-Сервер для получения информации о погоде через Weather.gov API.
+### Быстрый старт
 
-**Запуск:**
-```bash
-cd weather-mcp-server
-./start-server.sh [port]
-```
+1. **Запустите MCP серверы:**
+   ```bash
+   ./start-servers.sh
+   ```
 
-По умолчанию запускается на порту 8080.
+2. **Откройте приложение** и нажмите на иконку настроек (⚙️) в верхней панели
 
-**Инструменты:**
-- `get_weather` - Получение информации о погоде для указанного местоположения
+3. **Включите нужные инструменты** для каждого сервера в диалоге "MCP Tools"
 
-### Google Storage MCP Server
-
-Сервер для сохранения данных в Google Drive.
-
-**Запуск:**
-```bash
-cd google-storage-mcp-server
-./start-server.sh [port]
-```
-
-По умолчанию запускается на порту 8081.
-
-**Инструменты:**
-- `save_to_drive` - Сохранение JSON данных в Google Drive
-
-**Настройка Google Drive:**
-1. Создайте проект в Google Cloud Console
-2. Включите Google Drive API
-3. Создайте OAuth 2.0 credentials
-4. Получите access token для доступа к Google Drive
-
-### Запуск всех серверов
-
-Для запуска всех MCP серверов одновременно:
-
-```bash
-./start-servers.sh
-```
-
-Этот скрипт запустит оба сервера в фоновом режиме.
-
-## Работа с MCP серверами в приложении
-
-1. Откройте приложение
-2. Нажмите на иконку настроек (⚙️) в верхней панели
-3. В диалоге "MCP Tools" вы увидите список доступных серверов
-4. Включите нужные инструменты для каждого сервера
-5. Состояние инструментов сохраняется между сессиями
+4. **Состояние инструментов сохраняется** между сессиями
 
 ## Логика работы
 
@@ -117,10 +79,8 @@ cd google-storage-mcp-server
 2. AI чат использует инструмент `get_weather` из Weather MCP Server
 3. Weather MCP Server возвращает данные о погоде
 4. AI чат сжимает полученную информацию в JSON формат
-5. AI чат использует инструмент `save_to_drive` из Google Storage MCP Server
-6. Google Storage MCP Server сохраняет данные в файл `ai-chat-results` в корне Google Drive пользователя
-   - Если файл существует, он перезаписывается
-   - Если файл не существует, создается новый
+5. AI чат использует инструменты `delete_file_from_drive` и `save_to_drive` из Google Storage MCP Server
+6. Google Storage MCP Server удаляет старый файл `ai-chat-results` (если существует) и создает новый с обновленными данными
 
 ## Архитектурные принципы
 
