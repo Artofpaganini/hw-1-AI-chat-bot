@@ -167,7 +167,9 @@ gcloud auth application-default login --scopes=https://www.googleapis.com/auth/d
 1. **Откройте файл `local.properties`** в корне проекта
 2. **Добавьте строку:**
    ```properties
-   GOOGLE_DRIVE_ACCESS_TOKEN=your_access_token_here
+
+   access_token=your_access_token_here
+
    ```
    (Замените на ваш реальный access token)
 
