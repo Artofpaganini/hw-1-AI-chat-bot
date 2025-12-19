@@ -10,6 +10,7 @@ data class McpServer(
     companion object {
         const val WEATHER_SERVER_ID = "weather-mcp-server"
         const val GOOGLE_STORAGE_SERVER_ID = "google-storage-mcp-server"
+        const val REMOTE_DOCKER_SERVER_ID = "remote-docker-mcp-server"
         
         val DEFAULT_SERVERS = listOf(
             McpServer(
@@ -24,6 +25,13 @@ data class McpServer(
                 name = "Google Storage MCP Server",
                 baseUrl = "http://10.0.2.2",
                 port = 8081,
+                tools = emptyList()
+            ),
+            McpServer(
+                id = REMOTE_DOCKER_SERVER_ID,
+                name = "Remote Docker MCP Server",
+                baseUrl = "http://10.0.2.2",
+                port = 8082,
                 tools = emptyList()
             )
         )

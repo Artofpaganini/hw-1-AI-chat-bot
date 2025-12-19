@@ -17,6 +17,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_TEST_MODE_ENABLED = "test_mode_enabled"
         private const val KEY_ENABLED_MCP_SERVER_TOOLS = "enabled_mcp_server_tools" // Format: "serverId:tool1,tool2|serverId2:tool1"
         private const val KEY_GOOGLE_DRIVE_ACCESS_TOKEN = "google_drive_access_token"
+        private const val KEY_DOCKER_ENABLED = "docker_enabled"
     }
 
     var weatherNotificationsEnabled: Boolean
@@ -86,5 +87,9 @@ class PreferencesManager(context: Context) {
     var googleDriveAccessToken: String?
         get() = prefs.getString(KEY_GOOGLE_DRIVE_ACCESS_TOKEN, null)
         set(value) = prefs.edit().putString(KEY_GOOGLE_DRIVE_ACCESS_TOKEN, value).apply()
+    
+    var dockerEnabled: Boolean
+        get() = prefs.getBoolean(KEY_DOCKER_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_DOCKER_ENABLED, value).apply()
 }
 

@@ -46,6 +46,8 @@ fun McpToolsDialog(
     onWeatherNotificationsToggle: (Boolean) -> Unit = {},
     testModeEnabled: Boolean = false,
     onTestModeToggle: (Boolean) -> Unit = {},
+    dockerEnabled: Boolean = false,
+    onDockerToggle: (Boolean) -> Unit = {},
     mcpServers: List<McpServer> = emptyList(),
     enabledMcpServerTools: Map<String, Set<String>> = emptyMap(),
     onServerToolToggle: (String, String, Boolean) -> Unit = { _, _, _ -> }
@@ -111,6 +113,14 @@ fun McpToolsDialog(
                         TestModeItem(
                             enabled = testModeEnabled,
                             onToggle = onTestModeToggle
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                        )
+                        DockerItem(
+                            enabled = dockerEnabled,
+                            onToggle = onDockerToggle
                         )
                         if (mcpServers.isNotEmpty()) {
                             HorizontalDivider(
@@ -291,6 +301,51 @@ private fun TestModeItem(
                     )
                     Text(
                         text = "Use Foreground Service for testing (notifications every 1 minute, works when app is in background)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onToggle
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DockerItem(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "Docker & Android Emulator Control",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Enable Docker integration for controlling Android emulator via ADB commands (Home, Back, open apps, etc.)",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp)

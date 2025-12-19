@@ -24,7 +24,8 @@ data class ChatUiState(
     val enabledMcpServerTools: Map<String, Set<String>> = emptyMap(), // serverId -> Set<toolName>
     val showMcpToolsDialog: Boolean = false,
     val weatherNotificationsEnabled: Boolean = false,
-    val testModeEnabled: Boolean = false
+    val testModeEnabled: Boolean = false,
+    val dockerEnabled: Boolean = false
 )
 
 sealed interface ChatAction {
@@ -42,6 +43,7 @@ sealed interface ChatAction {
     data class ToggleMcpServerTool(val serverId: String, val toolName: String, val enabled: Boolean) : ChatAction
     data class ToggleWeatherNotifications(val enabled: Boolean) : ChatAction
     data class ToggleTestMode(val enabled: Boolean) : ChatAction
+    data class ToggleDocker(val enabled: Boolean) : ChatAction
 }
 
 sealed interface ChatEvent {

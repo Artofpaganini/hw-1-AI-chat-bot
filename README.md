@@ -57,6 +57,7 @@ GOOGLE_DRIVE_ACCESS_TOKEN=your_google_drive_access_token_here
 
 - **Weather MCP Server** - см. [weather-mcp-server/README.md](weather-mcp-server/README.md)
 - **Google Storage MCP Server** - см. [google-storage-mcp-server/README.md](google-storage-mcp-server/README.md)
+- **Remote Docker MCP Server** - см. [remote-docker-mcp-server/README.md](remote-docker-mcp-server/README.md)
 
 ### Быстрый старт
 
@@ -81,6 +82,68 @@ GOOGLE_DRIVE_ACCESS_TOKEN=your_google_drive_access_token_here
 4. AI чат сжимает полученную информацию в JSON формат
 5. AI чат использует инструменты `delete_file_from_drive` и `save_to_drive` из Google Storage MCP Server
 6. Google Storage MCP Server удаляет старый файл `ai-chat-results` (если существует) и создает новый с обновленными данными
+
+### Поток данных: User → AI Chat → Remote Docker MCP Server → Android Emulator
+
+1. Пользователь включает Docker в настройках приложения
+2. Пользователь включает инструменты Remote Docker MCP Server (например, `press_home`, `open_app`)
+3. Пользователь просит AI выполнить действие на Android эмуляторе (например, "Нажми кнопку Home" или "Открой Chrome")
+4. AI чат определяет нужный инструмент и отправляет запрос в Remote Docker MCP Server
+5. Remote Docker MCP Server выполняет ADB команду на эмуляторе
+6. Remote Docker MCP Server возвращает результат выполнения
+7. AI чат сообщает пользователю о результате
+
+## Формат Toon
+
+Приложение использует формат **Toon (Token-Oriented Object Notation)** для экспорта истории чата. Toon - это эффективный формат для работы с LLM, оптимизированный для минимального использования токенов.
+
+### Экспорт в Toon
+
+1. Откройте приложение
+2. Нажмите на иконку экспорта (📥) в верхней панели
+3. История чата будет экспортирована в формате Toon
+4. Вы можете скопировать экспортированные данные в буфер обмена
+
+### Использование Toon
+
+Toon формат используется для:
+- Экспорта истории чата
+- Эффективной передачи данных в LLM
+- Минимизации использования токенов при работе с контекстом
+
+## Docker и Android Emulator
+
+### Настройка Docker
+
+1. **Установите ADB:**
+   - macOS: `brew install android-platform-tools`
+   - Linux: `sudo apt-get install android-tools-adb`
+   - Windows: Скачайте [Android SDK Platform Tools](https://developer.android.com/studio/releases/platform-tools)
+
+2. **Проверьте подключение эмулятора:**
+   ```bash
+   adb devices
+   ```
+
+3. **Запустите Remote Docker MCP Server:**
+   ```bash
+   ./start-servers.sh
+   ```
+
+4. **Включите Docker в приложении:**
+   - Откройте настройки (⚙️)
+   - Включите "Docker & Android Emulator Control"
+   - Включите нужные инструменты Remote Docker MCP Server
+
+### Доступные команды
+
+- **press_home** - Нажать кнопку Home
+- **press_back** - Нажать кнопку Back
+- **open_app** - Открыть приложение по package name
+- **minimize_app** - Свернуть текущее приложение
+- **execute_adb_command** - Выполнить произвольную ADB команду
+
+Подробнее см. [remote-docker-mcp-server/README.md](remote-docker-mcp-server/README.md)
 
 ## Архитектурные принципы
 

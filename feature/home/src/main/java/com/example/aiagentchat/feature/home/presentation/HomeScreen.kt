@@ -164,6 +164,10 @@ fun HomeScreen(
             onTestModeToggle = { enabled ->
                 viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleTestMode(enabled))
             },
+            dockerEnabled = state.dockerEnabled,
+            onDockerToggle = { enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleDocker(enabled))
+            },
             mcpServers = state.mcpServers,
             enabledMcpServerTools = state.enabledMcpServerTools,
             onServerToolToggle = { serverId, toolName, enabled ->

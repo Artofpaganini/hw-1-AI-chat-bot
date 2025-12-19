@@ -65,6 +65,7 @@ class ChatViewModel(
         loadEnabledMcpTools()
         loadEnabledMcpServerTools()
         loadTestModeState()
+        loadDockerState()
     }
 
     fun onAction(action: ChatAction) {
@@ -83,6 +84,7 @@ class ChatViewModel(
             is ChatAction.ToggleMcpServerTool -> handleToggleMcpServerTool(action.serverId, action.toolName, action.enabled)
             is ChatAction.ToggleWeatherNotifications -> handleToggleWeatherNotifications(action.enabled)
             is ChatAction.ToggleTestMode -> handleToggleTestMode(action.enabled)
+            is ChatAction.ToggleDocker -> handleToggleDocker(action.enabled)
         }
     }
     
@@ -352,6 +354,11 @@ class ChatViewModel(
         val enabled = preferencesManager.testModeEnabled
         _uiState.update { it.copy(testModeEnabled = enabled) }
     }
+    
+    private fun loadDockerState() {
+        val enabled = preferencesManager.dockerEnabled
+        _uiState.update { it.copy(dockerEnabled = enabled) }
+    }
 
     private fun handleToggleTestMode(enabled: Boolean) {
         android.util.Log.d("ChatViewModel", "Toggle test mode: $enabled")
@@ -418,6 +425,12 @@ class ChatViewModel(
         } catch (e: Exception) {
             android.util.Log.e("ChatViewModel", "Failed to stop weather service", e)
         }
+    }
+    
+    private fun handleToggleDocker(enabled: Boolean) {
+        android.util.Log.d("ChatViewModel", "Toggle Docker: $enabled")
+        preferencesManager.dockerEnabled = enabled
+        _uiState.update { it.copy(dockerEnabled = enabled) }
     }
 
     private fun buildMessagesWithContext(currentInput: String): List<ChatMessageDto> {
