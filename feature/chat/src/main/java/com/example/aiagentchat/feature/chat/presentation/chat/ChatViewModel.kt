@@ -65,7 +65,8 @@ class ChatViewModel(
         loadEnabledMcpTools()
         loadEnabledMcpServerTools()
         loadTestModeState()
-        loadDockerState()
+        loadRemoteControlState()
+        loadRemoteControlDeviceId()
     }
 
     fun onAction(action: ChatAction) {
@@ -84,7 +85,8 @@ class ChatViewModel(
             is ChatAction.ToggleMcpServerTool -> handleToggleMcpServerTool(action.serverId, action.toolName, action.enabled)
             is ChatAction.ToggleWeatherNotifications -> handleToggleWeatherNotifications(action.enabled)
             is ChatAction.ToggleTestMode -> handleToggleTestMode(action.enabled)
-            is ChatAction.ToggleDocker -> handleToggleDocker(action.enabled)
+            is ChatAction.ToggleRemoteControl -> handleToggleRemoteControl(action.enabled)
+            is ChatAction.SetRemoteControlDeviceId -> handleSetRemoteControlDeviceId(action.deviceId)
         }
     }
     
@@ -172,7 +174,8 @@ class ChatViewModel(
                 model = _uiState.value.selectedModel,
                 messages = messagesWithContext,
                 enabledMcpTools = _uiState.value.enabledMcpTools,
-                enabledMcpServerTools = _uiState.value.enabledMcpServerTools
+                enabledMcpServerTools = _uiState.value.enabledMcpServerTools,
+                remoteControlDeviceId = if (_uiState.value.remoteControlEnabled) _uiState.value.remoteControlDeviceId else null
             )
                 .onSuccess { aiMessage ->
                     chatRepository.saveMessage(aiMessage)
@@ -355,9 +358,9 @@ class ChatViewModel(
         _uiState.update { it.copy(testModeEnabled = enabled) }
     }
     
-    private fun loadDockerState() {
-        val enabled = preferencesManager.dockerEnabled
-        _uiState.update { it.copy(dockerEnabled = enabled) }
+    private fun loadRemoteControlState() {
+        val enabled = preferencesManager.remoteControlEnabled
+        _uiState.update { it.copy(remoteControlEnabled = enabled) }
     }
 
     private fun handleToggleTestMode(enabled: Boolean) {
@@ -427,10 +430,21 @@ class ChatViewModel(
         }
     }
     
-    private fun handleToggleDocker(enabled: Boolean) {
-        android.util.Log.d("ChatViewModel", "Toggle Docker: $enabled")
-        preferencesManager.dockerEnabled = enabled
-        _uiState.update { it.copy(dockerEnabled = enabled) }
+    private fun loadRemoteControlDeviceId() {
+        val deviceId = preferencesManager.remoteControlDeviceId
+        _uiState.update { it.copy(remoteControlDeviceId = deviceId) }
+    }
+    
+    private fun handleToggleRemoteControl(enabled: Boolean) {
+        android.util.Log.d("ChatViewModel", "Toggle Remote Control: $enabled")
+        preferencesManager.remoteControlEnabled = enabled
+        _uiState.update { it.copy(remoteControlEnabled = enabled) }
+    }
+    
+    private fun handleSetRemoteControlDeviceId(deviceId: String?) {
+        android.util.Log.d("ChatViewModel", "Set Remote Control Device ID: $deviceId")
+        preferencesManager.remoteControlDeviceId = deviceId
+        _uiState.update { it.copy(remoteControlDeviceId = deviceId) }
     }
 
     private fun buildMessagesWithContext(currentInput: String): List<ChatMessageDto> {
@@ -447,32 +461,35 @@ class ChatViewModel(
         val sessionContext = _uiState.value.sessionContext
         val messages = mutableListOf<ChatMessageDto>()
         
-        val contextParts = mutableListOf<String>()
+        // Используем Toon формат для контекста для экономии токенов
+        val contextData = mutableMapOf<String, Any?>()
         
         if (sessionContext.userSummaries.isNotEmpty()) {
-            val userContext = sessionContext.userSummaries
+            val userSummariesData = sessionContext.userSummaries
                 .sortedByDescending { it.timestamp }
                 .take(3)
-                .joinToString(separator = "\n\n") { summary ->
-                    "Пользователь: ${summary.summary}" + 
-                    if (summary.keyFacts.isNotEmpty()) {
-                        "\nКлючевые факты: ${summary.keyFacts.joinToString(", ")}"
-                    } else ""
+                .map { summary ->
+                    mapOf(
+                        "summary" to summary.summary,
+                        "keyFacts" to summary.keyFacts,
+                        "timestamp" to summary.timestamp
+                    )
                 }
-            contextParts.add("Контекст предыдущих сообщений пользователя:\n$userContext")
+            contextData["userSummaries"] = userSummariesData
         }
         
         if (sessionContext.aiSummaries.isNotEmpty()) {
-            val aiContext = sessionContext.aiSummaries
+            val aiSummariesData = sessionContext.aiSummaries
                 .sortedByDescending { it.timestamp }
                 .take(3)
-                .joinToString(separator = "\n\n") { summary ->
-                    "AI: ${summary.summary}" + 
-                    if (summary.keyFacts.isNotEmpty()) {
-                        "\nКлючевые факты: ${summary.keyFacts.joinToString(", ")}"
-                    } else ""
+                .map { summary ->
+                    mapOf(
+                        "summary" to summary.summary,
+                        "keyFacts" to summary.keyFacts,
+                        "timestamp" to summary.timestamp
+                    )
                 }
-            contextParts.add("Контекст предыдущих ответов AI:\n$aiContext")
+            contextData["aiSummaries"] = aiSummariesData
         }
         
         val currentMessages = _uiState.value.messages
@@ -484,11 +501,18 @@ class ChatViewModel(
                 )
             }
         
-        if (contextParts.isNotEmpty()) {
-            val systemMessage = contextParts.joinToString("\n\n") + 
-                "\n\nИспользуй этот контекст для понимания истории разговора. " +
-                "Отвечай с учетом предыдущих обсуждений. " +
-                "Если пользователь спрашивает о чем-то из прошлого, используй этот контекст для ответа."
+        if (contextData.isNotEmpty()) {
+            // Форматируем контекст в Toon для экономии токенов
+            val toonContext = com.example.aiagentchat.core.common.toon.ToonEncoder.encode(contextData)
+            val systemMessage = buildString {
+                appendLine("Контекст предыдущих обсуждений (в формате TOON для экономии токенов):")
+                appendLine()
+                appendLine("```toon")
+                appendLine(toonContext)
+                appendLine("```")
+                appendLine()
+                appendLine("Используй этот контекст для понимания истории разговора. Отвечай с учетом предыдущих обсуждений. Если пользователь спрашивает о чем-то из прошлого, используй этот контекст для ответа.")
+            }
             messages.add(ChatMessageDto(role = "system", content = systemMessage))
         }
         

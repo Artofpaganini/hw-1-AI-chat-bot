@@ -24,7 +24,7 @@
             <option value="$PROJECT_DIR$/feature/profile" />
             <option value="$PROJECT_DIR$/feature/settings" />
             <option value="$PROJECT_DIR$/google-storage-mcp-server" />
-            <option value="$PROJECT_DIR$/remote-docker-mcp-server" />
+            <option value="$PROJECT_DIR$/remote-control-mcp-server" />
             <option value="$PROJECT_DIR$/weather-mcp-server" />
           </set>
         </option>

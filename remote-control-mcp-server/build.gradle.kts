@@ -19,15 +19,15 @@ dependencies {
 }
 
 application {
-    mainClass.set("com.example.remotedockermcpserver.RemoteDockerMcpServerKt")
+    mainClass.set("com.example.remotecontrolmcpserver.RemoteControlMcpServerKt")
 }
 
 tasks.jar {
-    archiveBaseName.set("remote-docker-mcp-server")
+    archiveBaseName.set("remote-control-mcp-server")
     archiveVersion.set("1.0.0")
     
     manifest {
-        attributes["Main-Class"] = "com.example.remotedockermcpserver.RemoteDockerMcpServerKt"
+        attributes["Main-Class"] = "com.example.remotecontrolmcpserver.RemoteControlMcpServerKt"
     }
     
     from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
@@ -39,12 +39,12 @@ tasks.jar {
 }
 
 tasks.register<Jar>("fatJar") {
-    archiveBaseName.set("remote-docker-mcp-server")
+    archiveBaseName.set("remote-control-mcp-server")
     archiveVersion.set("1.0.0")
     archiveClassifier.set("all")
     
     manifest {
-        attributes["Main-Class"] = "com.example.remotedockermcpserver.RemoteDockerMcpServerKt"
+        attributes["Main-Class"] = "com.example.remotecontrolmcpserver.RemoteControlMcpServerKt"
     }
     
     from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })

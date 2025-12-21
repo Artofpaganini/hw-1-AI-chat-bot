@@ -57,7 +57,7 @@ GOOGLE_DRIVE_ACCESS_TOKEN=your_google_drive_access_token_here
 
 - **Weather MCP Server** - см. [weather-mcp-server/README.md](weather-mcp-server/README.md)
 - **Google Storage MCP Server** - см. [google-storage-mcp-server/README.md](google-storage-mcp-server/README.md)
-- **Remote Docker MCP Server** - см. [remote-docker-mcp-server/README.md](remote-docker-mcp-server/README.md)
+- **Remote Control MCP Server** - см. [remote-control-mcp-server/README.md](remote-control-mcp-server/README.md)
 
 ### Быстрый старт
 
@@ -83,19 +83,28 @@ GOOGLE_DRIVE_ACCESS_TOKEN=your_google_drive_access_token_here
 5. AI чат использует инструменты `delete_file_from_drive` и `save_to_drive` из Google Storage MCP Server
 6. Google Storage MCP Server удаляет старый файл `ai-chat-results` (если существует) и создает новый с обновленными данными
 
-### Поток данных: User → AI Chat → Remote Docker MCP Server → Android Emulator
+### Поток данных: User → AI Chat → Remote Control MCP Server → Connected Real Device
 
-1. Пользователь включает Docker в настройках приложения
-2. Пользователь включает инструменты Remote Docker MCP Server (например, `press_home`, `open_app`)
-3. Пользователь просит AI выполнить действие на Android эмуляторе (например, "Нажми кнопку Home" или "Открой Chrome")
-4. AI чат определяет нужный инструмент и отправляет запрос в Remote Docker MCP Server
-5. Remote Docker MCP Server выполняет ADB команду на эмуляторе
-6. Remote Docker MCP Server возвращает результат выполнения
-7. AI чат сообщает пользователю о результате
+1. Пользователь включает Remote Control в настройках приложения
+2. Пользователь указывает Device ID (опционально) в настройках Remote Device Control
+3. Пользователь включает инструменты Remote Control MCP Server (например, `press_home`, `open_app`, `take_screenshot`)
+4. Пользователь просит AI выполнить действие на подключенном устройстве (например, "Нажми кнопку Home на реальном устройстве" или "Открой Chrome на подключенном устройстве")
+5. AI чат определяет нужный инструмент и автоматически добавляет Device ID в аргументы (если он указан в настройках)
+6. AI чат отправляет запрос в Remote Control MCP Server с параметром `deviceId`
+7. Remote Control MCP Server выполняет ADB команду на указанном устройстве: `adb -s [deviceId] shell [command]`
+8. Remote Control MCP Server возвращает результат выполнения
+9. AI чат сообщает пользователю о результате
 
 ## Формат Toon
 
-Приложение использует формат **Toon (Token-Oriented Object Notation)** для экспорта истории чата. Toon - это эффективный формат для работы с LLM, оптимизированный для минимального использования токенов.
+Приложение использует формат **Toon (Token-Oriented Object Notation)** для взаимодействия с AI моделями. Toon - это эффективный формат для работы с LLM, оптимизированный для минимального использования токенов (экономия 30-60% по сравнению с JSON).
+
+### Использование Toon
+
+Toon формат используется для:
+- **Экспорта истории чата** - история экспортируется в формате Toon для экономии места
+- **Форматирования контекста** - системные сообщения с контекстом форматируются в Toon для экономии токенов
+- **Эффективной передачи данных в LLM** - контекст предыдущих обсуждений передается в Toon формате
 
 ### Экспорт в Toon
 
@@ -104,46 +113,57 @@ GOOGLE_DRIVE_ACCESS_TOKEN=your_google_drive_access_token_here
 3. История чата будет экспортирована в формате Toon
 4. Вы можете скопировать экспортированные данные в буфер обмена
 
-### Использование Toon
+### Форматирование контекста
 
-Toon формат используется для:
-- Экспорта истории чата
-- Эффективной передачи данных в LLM
-- Минимизации использования токенов при работе с контекстом
+При отправке сообщений с контекстом, система автоматически форматирует контекст в Toon формат, что позволяет:
+- Сэкономить до 60% токенов по сравнению с JSON
+- Передать больше контекста в одном запросе
+- Улучшить понимание AI модели за счет структурированного формата
 
-## Docker и Android Emulator
+## Remote Control и Android Devices
 
-### Настройка Docker
+### Настройка Remote Control
 
 1. **Установите ADB:**
    - macOS: `brew install android-platform-tools`
    - Linux: `sudo apt-get install android-tools-adb`
    - Windows: Скачайте [Android SDK Platform Tools](https://developer.android.com/studio/releases/platform-tools)
 
-2. **Проверьте подключение эмулятора:**
+2. **Подключите устройство:**
+   - Для эмулятора: просто запустите эмулятор
+   - Для реального устройства:
+     - Включите режим разработчика
+     - Включите отладку по USB
+     - Подключите устройство через USB
+
+3. **Проверьте подключение:**
    ```bash
    adb devices
    ```
 
-3. **Запустите Remote Docker MCP Server:**
+4. **Запустите Remote Control MCP Server:**
    ```bash
    ./start-servers.sh
    ```
 
-4. **Включите Docker в приложении:**
+5. **Включите Remote Control в приложении:**
    - Откройте настройки (⚙️)
-   - Включите "Docker & Android Emulator Control"
-   - Включите нужные инструменты Remote Docker MCP Server
+   - Включите "Remote Device Control"
+   - Включите нужные инструменты Remote Control MCP Server
 
 ### Доступные команды
 
+- **list_devices** - Получить список подключенных устройств
 - **press_home** - Нажать кнопку Home
 - **press_back** - Нажать кнопку Back
 - **open_app** - Открыть приложение по package name
 - **minimize_app** - Свернуть текущее приложение
+- **take_screenshot** - Сделать скриншот экрана
 - **execute_adb_command** - Выполнить произвольную ADB команду
 
-Подробнее см. [remote-docker-mcp-server/README.md](remote-docker-mcp-server/README.md)
+Все команды поддерживают опциональный параметр `deviceId` для работы с конкретным устройством.
+
+Подробнее см. [remote-control-mcp-server/README.md](remote-control-mcp-server/README.md)
 
 ## Архитектурные принципы
 
@@ -167,6 +187,187 @@ Toon формат используется для:
 ```bash
 ./gradlew assembleDebug
 ```
+
+## Запуск и проверка работоспособности
+
+### Шаг 1: Подготовка окружения
+
+1. **Установите ADB (для Remote Control):**
+   ```bash
+   # macOS
+   brew install android-platform-tools
+   
+   # Linux
+   sudo apt-get install android-tools-adb
+   
+   # Windows
+   # Скачайте Android SDK Platform Tools и добавьте в PATH
+   ```
+
+2. **Проверьте подключение устройств:**
+   ```bash
+   adb devices
+   ```
+   Должен показать список подключенных устройств/эмуляторов.
+
+### Шаг 2: Запуск MCP серверов
+
+```bash
+./start-servers.sh
+```
+
+Этот скрипт запустит все MCP серверы в фоновом режиме:
+- **Weather MCP Server** (порт 8080)
+- **Google Storage MCP Server** (порт 8081)
+- **Remote Control MCP Server** (порт 8082)
+
+**Проверка запуска:**
+```bash
+# Проверка логов
+tail -f /tmp/weather-mcp-server.log
+tail -f /tmp/google-storage-mcp-server.log
+tail -f /tmp/remote-control-mcp-server.log
+
+# Проверка доступности через curl
+curl -X POST http://localhost:8080/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+
+curl -X POST http://localhost:8081/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+
+curl -X POST http://localhost:8082/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+```
+
+**Остановка серверов:**
+```bash
+# Найти процессы
+ps aux | grep mcp-server
+
+# Остановить все серверы
+pkill -f mcp-server
+```
+
+### Шаг 3: Сборка и запуск приложения
+
+1. **Соберите приложение:**
+   ```bash
+   ./gradlew assembleDebug
+   ```
+
+2. **Установите на эмулятор/устройство:**
+   ```bash
+   adb install app/build/outputs/apk/debug/app-debug.apk
+   ```
+
+3. **Запустите приложение** на эмуляторе или устройстве.
+
+### Шаг 4: Настройка в приложении
+
+1. **Откройте приложение** на эмуляторе/устройстве
+2. **Нажмите на иконку настроек** (⚙️) в верхней панели
+3. **Включите нужные функции:**
+   - **Weather Notifications** (опционально) - для уведомлений о погоде
+   - **Test Mode** (опционально) - для тестирования уведомлений
+   - **Remote Device Control** - для управления подключенными устройствами
+4. **Настройте Remote Device Control:**
+   - Включите переключатель "Remote Device Control"
+   - **Укажите Device ID** (опционально):
+     - Если оставить пустым, будет использоваться устройство по умолчанию
+     - Для работы с конкретным устройством укажите его ID (например, `emulator-5554` или `ABC123XYZ`)
+     - Чтобы узнать доступные устройства, используйте инструмент `list_devices` из Remote Control MCP Server
+5. **Включите инструменты для каждого MCP сервера:**
+   - Найдите нужный сервер в списке (Weather, Google Storage, Remote Control)
+   - Включите нужные инструменты (например, для Remote Control: `press_home`, `open_app`, `take_screenshot`)
+
+**Примечание:** Состояние всех настроек (включая Device ID) сохраняется между сессиями.
+
+### Шаг 5: Проверка Remote Control
+
+1. **Подключите реальное устройство (если нужно):**
+   ```bash
+   # Включите режим разработчика на устройстве
+   # Включите отладку по USB
+   # Подключите через USB
+   adb devices
+   ```
+   
+   **Пример вывода:**
+   ```
+   List of devices attached
+   emulator-5554    device
+   ABC123XYZ        device
+   ```
+
+2. **Настройте Remote Control в приложении:**
+   - Настройки → Remote Device Control → Включить
+   - **Укажите Device ID** (если нужно работать с конкретным устройством):
+     - Например: `emulator-5554` или `ABC123XYZ`
+     - Если оставить пустым, будет использоваться устройство по умолчанию
+   - Включите инструменты Remote Control MCP Server
+
+3. **Проверьте работу через AI:**
+   - Попросите AI: **"Нажми кнопку Home на подключенном устройстве"**
+   - Попросите AI: **"Открой Chrome на реальном устройстве"**
+   - Попросите AI: **"Сделай скриншот подключенного устройства"**
+   - Попросите AI: **"Открой YouTube на подключенном устройстве"**
+   
+   **Важно:** Если вы указали Device ID в настройках, все команды будут выполняться на указанном устройстве. Если Device ID не указан, будет использоваться устройство по умолчанию.
+
+4. **Проверьте логи сервера:**
+   ```bash
+   tail -f /tmp/remote-control-mcp-server.log
+   ```
+   
+   В логах вы увидите, на каком устройстве выполняются команды:
+   ```
+   Executing ADB command: shell input keyevent KEYCODE_HOME on device: emulator-5554
+   ```
+
+### Шаг 6: Проверка Toon формата
+
+1. **Экспорт истории в Toon:**
+   - Откройте приложение
+   - Отправьте несколько сообщений
+   - Нажмите на иконку экспорта (📥) в верхней панели
+   - Проверьте, что экспортированные данные в формате Toon (компактный формат с таблицами)
+
+2. **Проверка использования Toon для контекста:**
+   - Отправьте несколько сообщений с контекстом
+   - Проверьте логи приложения (контекст должен быть в Toon формате)
+   - Toon формат экономит до 60% токенов по сравнению с JSON
+
+### Шаг 7: Устранение проблем
+
+**Проблема: "Server not found: remote-docker-mcp-server"**
+- **Решение:** Приложение автоматически мигрирует старые настройки. Если проблема сохраняется:
+  1. Откройте настройки приложения
+  2. Отключите и снова включите Remote Device Control
+  3. Перезапустите приложение
+
+**Проблема: Команды выполняются не на том устройстве**
+- **Решение:** 
+  1. Проверьте, что Device ID указан правильно в настройках
+  2. Используйте инструмент `list_devices` для получения списка доступных устройств
+  3. Убедитесь, что указанный Device ID присутствует в списке `adb devices`
+
+**Проблема: Сервер не запускается**
+- Проверьте, что порт свободен: `lsof -i :8082`
+- Проверьте логи: `tail -f /tmp/remote-control-mcp-server.log`
+- Убедитесь, что скрипт имеет права на выполнение: `chmod +x start-servers.sh`
+
+**Проблема: Устройство не найдено**
+- Проверьте подключение: `adb devices`
+- Убедитесь, что включена отладка по USB
+- Перезапустите ADB: `adb kill-server && adb start-server`
+
+**Проблема: Команды не выполняются**
+- Проверьте, что сервер запущен
+- Проверьте, что инструменты включены в настройках
+- Проверьте логи сервера на наличие ошибок
 
 ## Тестирование
 

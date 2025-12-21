@@ -25,7 +25,8 @@ data class ChatUiState(
     val showMcpToolsDialog: Boolean = false,
     val weatherNotificationsEnabled: Boolean = false,
     val testModeEnabled: Boolean = false,
-    val dockerEnabled: Boolean = false
+    val remoteControlEnabled: Boolean = false,
+    val remoteControlDeviceId: String? = null
 )
 
 sealed interface ChatAction {
@@ -43,7 +44,8 @@ sealed interface ChatAction {
     data class ToggleMcpServerTool(val serverId: String, val toolName: String, val enabled: Boolean) : ChatAction
     data class ToggleWeatherNotifications(val enabled: Boolean) : ChatAction
     data class ToggleTestMode(val enabled: Boolean) : ChatAction
-    data class ToggleDocker(val enabled: Boolean) : ChatAction
+    data class ToggleRemoteControl(val enabled: Boolean) : ChatAction
+    data class SetRemoteControlDeviceId(val deviceId: String?) : ChatAction
 }
 
 sealed interface ChatEvent {

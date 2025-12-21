@@ -18,9 +18,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -46,8 +48,10 @@ fun McpToolsDialog(
     onWeatherNotificationsToggle: (Boolean) -> Unit = {},
     testModeEnabled: Boolean = false,
     onTestModeToggle: (Boolean) -> Unit = {},
-    dockerEnabled: Boolean = false,
-    onDockerToggle: (Boolean) -> Unit = {},
+    remoteControlEnabled: Boolean = false,
+    onRemoteControlToggle: (Boolean) -> Unit = {},
+    remoteControlDeviceId: String? = null,
+    onRemoteControlDeviceIdChange: (String?) -> Unit = {},
     mcpServers: List<McpServer> = emptyList(),
     enabledMcpServerTools: Map<String, Set<String>> = emptyMap(),
     onServerToolToggle: (String, String, Boolean) -> Unit = { _, _, _ -> }
@@ -118,9 +122,11 @@ fun McpToolsDialog(
                             modifier = Modifier.padding(vertical = 8.dp),
                             color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
                         )
-                        DockerItem(
-                            enabled = dockerEnabled,
-                            onToggle = onDockerToggle
+                        RemoteControlItem(
+                            enabled = remoteControlEnabled,
+                            onToggle = onRemoteControlToggle,
+                            deviceId = remoteControlDeviceId,
+                            onDeviceIdChange = onRemoteControlDeviceIdChange
                         )
                         if (mcpServers.isNotEmpty()) {
                             HorizontalDivider(
@@ -316,9 +322,11 @@ private fun TestModeItem(
 }
 
 @Composable
-private fun DockerItem(
+private fun RemoteControlItem(
     enabled: Boolean,
-    onToggle: (Boolean) -> Unit
+    onToggle: (Boolean) -> Unit,
+    deviceId: String?,
+    onDeviceIdChange: (String?) -> Unit
 ) {
     Surface(
         shape = MaterialTheme.shapes.medium,
@@ -339,13 +347,13 @@ private fun DockerItem(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
-                        text = "Docker & Android Emulator Control",
+                        text = "Remote Device Control",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Enable Docker integration for controlling Android emulator via ADB commands (Home, Back, open apps, etc.)",
+                        text = "Enable remote control for managing connected Android devices/emulators via ADB commands (Home, Back, open apps, screenshots, etc.)",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp)
@@ -355,6 +363,41 @@ private fun DockerItem(
                     checked = enabled,
                     onCheckedChange = onToggle
                 )
+            }
+            
+            if (enabled) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 12.dp),
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                )
+                
+                Column {
+                    Text(
+                        text = "Device ID (optional)",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    Text(
+                        text = "Specify device ID for remote control. Leave empty to use default device. Use 'list_devices' tool to see available devices.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    OutlinedTextField(
+                        value = deviceId ?: "",
+                        onValueChange = { onDeviceIdChange(it.takeIf { it.isNotBlank() }) },
+                        label = { Text("Device ID (e.g., emulator-5554)") },
+                        placeholder = { Text("Leave empty for default device") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = TextFieldDefaults.colors(
+                            focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+                            unfocusedIndicatorColor = MaterialTheme.colorScheme.outline
+                        )
+                    )
+                }
             }
         }
     }

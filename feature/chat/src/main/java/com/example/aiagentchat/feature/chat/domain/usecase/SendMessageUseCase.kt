@@ -31,7 +31,8 @@ class SendMessageUseCase(
         model: AiModel,
         messages: List<ChatMessageDto>,
         enabledMcpTools: Set<String> = emptySet(),
-        enabledMcpServerTools: Map<String, Set<String>> = emptyMap() // serverId -> Set<toolName>
+        enabledMcpServerTools: Map<String, Set<String>> = emptyMap(), // serverId -> Set<toolName>
+        remoteControlDeviceId: String? = null
     ): Result<Message> {
         val startTime = System.currentTimeMillis()
         
@@ -59,9 +60,15 @@ class SendMessageUseCase(
                         if (toolsResult.isSuccess) {
                             val mcpTools = toolsResult.getOrNull() ?: emptyList()
                             val filteredTools = mcpTools.filter { serverTools.contains(it.name) }
-                            val convertedTools = McpToolConverter.convertToAiTools(filteredTools)
+                            // Передаем deviceId для инструментов Remote Control
+                            val deviceIdForTools = if (server.id == McpServer.REMOTE_CONTROL_SERVER_ID) {
+                                remoteControlDeviceId
+                            } else {
+                                null
+                            }
+                            val convertedTools = McpToolConverter.convertToAiTools(filteredTools, deviceIdForTools)
                             allTools.addAll(convertedTools)
-                            Log.d(TAG, "Loaded ${convertedTools.size} tools from server ${server.id}")
+                            Log.d(TAG, "Loaded ${convertedTools.size} tools from server ${server.id}${if (deviceIdForTools != null) " with deviceId: $deviceIdForTools" else ""}")
                         }
                     }
                 }
@@ -69,7 +76,7 @@ class SendMessageUseCase(
             
             Log.d(TAG, "Total loaded ${allTools.size} tools: ${allTools.map { it.function.name }}")
             
-            val result = processWithToolCalls(model, messages, allTools, enabledMcpServerTools, startTime, 0)
+            val result = processWithToolCalls(model, messages, allTools, enabledMcpServerTools, remoteControlDeviceId, startTime, 0)
             result
         } catch (e: Exception) {
             Log.e(TAG, "Error in SendMessageUseCase", e)
@@ -86,7 +93,7 @@ class SendMessageUseCase(
                 Log.d(TAG, "Retrieved ${mcpTools.size} MCP tools: ${mcpTools.map { it.name }}")
                 val filteredTools = mcpTools.filter { enabledTools.contains(it.name) }
                 Log.d(TAG, "Filtered to ${filteredTools.size} enabled tools: ${filteredTools.map { it.name }}")
-                val convertedTools = McpToolConverter.convertToAiTools(filteredTools)
+                val convertedTools = McpToolConverter.convertToAiTools(filteredTools, null)
                 Log.d(TAG, "Converted to ${convertedTools.size} AI tools")
                 convertedTools
             } else {
@@ -105,6 +112,7 @@ class SendMessageUseCase(
         messages: List<ChatMessageDto>,
         tools: List<com.example.aiagentchat.feature.chat.data.api.ToolDto>,
         enabledMcpServerTools: Map<String, Set<String>>,
+        remoteControlDeviceId: String?,
         startTime: Long,
         iteration: Int
     ): Result<Message> {
@@ -118,7 +126,23 @@ class SendMessageUseCase(
             Log.d(TAG, "Tools being sent to AI: ${tools.map { it.function.name }}")
         }
         
-        val response = aiModelRepository.sendMessage(model, messages, tools.takeIf { it.isNotEmpty() })
+        // Добавляем системное сообщение о Device ID, если он указан и есть инструменты Remote Control
+        val messagesWithSystemContext = if (remoteControlDeviceId != null && iteration == 0 && hasRemoteControlTools(tools)) {
+            val systemMessage = ChatMessageDto(
+                role = "system",
+                content = "CRITICAL INSTRUCTION: The user has configured Device ID '$remoteControlDeviceId' in the app settings for Remote Control. " +
+                        "When the user asks to perform any action on a device (e.g., 'open YouTube', 'press Home', 'take screenshot'), " +
+                        "you MUST use Device ID '$remoteControlDeviceId' automatically WITHOUT asking the user. " +
+                        "The deviceId parameter will be automatically added to tool calls - you should NOT include it in your tool call arguments. " +
+                        "Do NOT ask the user which device to use. " +
+                        "Only if the user explicitly mentions a different device ID (e.g., 'on emulator-5554'), then you may use that device ID instead."
+            )
+            listOf(systemMessage) + messages
+        } else {
+            messages
+        }
+        
+        val response = aiModelRepository.sendMessage(model, messagesWithSystemContext, tools.takeIf { it.isNotEmpty() })
         
         return when {
             response.isSuccess -> {
@@ -134,7 +158,7 @@ class SendMessageUseCase(
                     val toolCallsToProcess = aiResponse.toolCalls ?: emptyList()
                     if (toolCallsToProcess.isNotEmpty()) {
                         Log.d(TAG, "AI model requested ${toolCallsToProcess.size} tool calls: ${toolCallsToProcess.map { it.function.name }}")
-                        handleToolCalls(model, messages, toolCallsToProcess, tools, enabledMcpServerTools, startTime, iteration)
+                        handleToolCalls(model, messages, toolCallsToProcess, tools, enabledMcpServerTools, remoteControlDeviceId, startTime, iteration)
                     } else {
                         Log.w(TAG, "Finish reason indicates tool calls but no tool_calls in response. Finish reason: ${aiResponse.finishReason}")
                         val responseTimeMs = System.currentTimeMillis() - startTime
@@ -186,6 +210,7 @@ class SendMessageUseCase(
         toolCalls: List<ToolCallDto>,
         tools: List<com.example.aiagentchat.feature.chat.data.api.ToolDto>,
         enabledMcpServerTools: Map<String, Set<String>>,
+        remoteControlDeviceId: String?,
         startTime: Long,
         iteration: Int
     ): Result<Message> {
@@ -195,12 +220,24 @@ class SendMessageUseCase(
         toolCalls.forEach { toolCall ->
             val toolName = toolCall.function.name
             val argumentsJson = toolCall.function.arguments
-            val arguments = McpToolConverter.parseToolCallArguments(argumentsJson)
+            var arguments = McpToolConverter.parseToolCallArguments(argumentsJson)
 
             Log.d(TAG, "Calling MCP tool: $toolName with arguments: $arguments")
 
             // Determine which server to use for this tool
             val serverId = findServerForTool(toolName, enabledMcpServerTools)
+            
+            // Если это инструмент Remote Control MCP Server и deviceId указан, добавляем его в аргументы
+            if (serverId == McpServer.REMOTE_CONTROL_SERVER_ID && remoteControlDeviceId != null) {
+                val updatedArguments = arguments.toMutableMap()
+                // Добавляем deviceId только если его еще нет в аргументах
+                if (!updatedArguments.containsKey("deviceId")) {
+                    updatedArguments["deviceId"] = remoteControlDeviceId
+                    arguments = updatedArguments
+                    Log.d(TAG, "Added deviceId to arguments: $remoteControlDeviceId")
+                }
+            }
+            
             val toolResult = if (serverId != null) {
                 // Use MultiMcpRepository for server-specific tools
                 multiMcpRepository.callTool(serverId, toolName, arguments)
@@ -250,12 +287,26 @@ class SendMessageUseCase(
             }
         }
         
-        return processWithToolCalls(model, updatedMessages, tools, enabledMcpServerTools, startTime, iteration + 1)
+        return processWithToolCalls(model, updatedMessages, tools, enabledMcpServerTools, remoteControlDeviceId, startTime, iteration + 1)
     }
     
-    private fun findServerForTool(toolName: String, enabledMcpServerTools: Map<String, Set<String>>): String? {
-        return enabledMcpServerTools.entries.find { (_, tools) -> tools.contains(toolName) }?.key
-    }
+            private fun findServerForTool(toolName: String, enabledMcpServerTools: Map<String, Set<String>>): String? {
+                return enabledMcpServerTools.entries.find { (_, tools) -> tools.contains(toolName) }?.key
+            }
+
+            private fun hasRemoteControlTools(tools: List<com.example.aiagentchat.feature.chat.data.api.ToolDto>): Boolean {
+                val remoteControlToolNames = listOf(
+                    "list_devices",
+                    "check_adb_availability",
+                    "press_home",
+                    "press_back",
+                    "open_app",
+                    "minimize_app",
+                    "take_screenshot",
+                    "execute_adb_command"
+                )
+                return tools.any { remoteControlToolNames.contains(it.function.name) }
+            }
     
     private suspend fun saveWeatherDataToDrive(weatherData: String) {
         try {

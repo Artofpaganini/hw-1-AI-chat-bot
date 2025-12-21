@@ -164,9 +164,13 @@ fun HomeScreen(
             onTestModeToggle = { enabled ->
                 viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleTestMode(enabled))
             },
-            dockerEnabled = state.dockerEnabled,
-            onDockerToggle = { enabled ->
-                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleDocker(enabled))
+            remoteControlEnabled = state.remoteControlEnabled,
+            onRemoteControlToggle = { enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleRemoteControl(enabled))
+            },
+            remoteControlDeviceId = state.remoteControlDeviceId,
+            onRemoteControlDeviceIdChange = { deviceId ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.SetRemoteControlDeviceId(deviceId))
             },
             mcpServers = state.mcpServers,
             enabledMcpServerTools = state.enabledMcpServerTools,
