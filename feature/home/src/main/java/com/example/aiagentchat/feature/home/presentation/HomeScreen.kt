@@ -27,6 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -49,6 +50,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.Manifest
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -73,7 +75,7 @@ import com.example.aiagentchat.feature.chat.presentation.components.ChatInput
 import com.example.aiagentchat.feature.chat.presentation.components.MessageBubble
 import com.example.aiagentchat.feature.chat.presentation.components.MetricsComparisonCard
 import com.example.aiagentchat.feature.chat.presentation.components.ModelSwitcher
-import com.example.aiagentchat.feature.chat.presentation.components.McpToolsDialog
+import com.example.aiagentchat.feature.chat.presentation.components.ToolsDialog
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 
@@ -99,6 +101,22 @@ fun HomeScreen(
         } else {
             scope.launch {
                 snackbarHostState.showSnackbar("Notification permission denied. Please enable it in settings.")
+            }
+        }
+    }
+    
+    // Launcher для запроса разрешения на чтение файлов
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.values.all { it }
+        if (allGranted) {
+            scope.launch {
+                snackbarHostState.showSnackbar("Storage permission granted")
+            }
+        } else {
+            scope.launch {
+                snackbarHostState.showSnackbar("Storage permission denied. Please enable it in settings to use Ollama indexing.")
             }
         }
     }
@@ -131,8 +149,23 @@ fun HomeScreen(
         )
     }
     
+    state.exportedJson?.let { jsonData ->
+        JsonExportDialog(
+            jsonData = jsonData,
+            onDismiss = { viewModel.onEvent(ChatEvent.OnDismissJsonExport) },
+            onCopy = {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = ClipData.newPlainText("JSON Export", jsonData)
+                clipboard.setPrimaryClip(clip)
+                scope.launch {
+                    snackbarHostState.showSnackbar("Copied to clipboard")
+                }
+            }
+        )
+    }
+    
     if (state.showMcpToolsDialog) {
-        McpToolsDialog(
+        ToolsDialog(
             tools = state.mcpTools,
             enabledTools = state.enabledMcpTools,
             onToolToggle = { toolName, enabled ->
@@ -154,7 +187,7 @@ fun HomeScreen(
                         if (!hasPermission) {
                             // Запрашиваем разрешение
                             notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                            return@McpToolsDialog
+                            return@ToolsDialog
                         }
                     }
                 }
@@ -171,6 +204,32 @@ fun HomeScreen(
             remoteControlDeviceId = state.remoteControlDeviceId,
             onRemoteControlDeviceIdChange = { deviceId ->
                 viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.SetRemoteControlDeviceId(deviceId))
+            },
+            ollamaEnabled = state.ollamaEnabled,
+            onOllamaToggle = { enabled ->
+                if (enabled) {
+                    // Проверяем разрешения на чтение файлов
+                    val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        arrayOf(
+                            Manifest.permission.READ_MEDIA_IMAGES,
+                            Manifest.permission.READ_MEDIA_VIDEO,
+                            Manifest.permission.READ_MEDIA_AUDIO
+                        )
+                    } else {
+                        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+                    }
+                    
+                    val hasAllPermissions = permissions.all { permission ->
+                        ContextCompat.checkSelfPermission(context, permission) == 
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                    }
+                    
+                    if (!hasAllPermissions) {
+                        storagePermissionLauncher.launch(permissions)
+                        return@ToolsDialog
+                    }
+                }
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleOllama(enabled))
             },
             mcpServers = state.mcpServers,
             enabledMcpServerTools = state.enabledMcpServerTools,
@@ -209,6 +268,15 @@ fun HomeScreen(
                             Icon(
                                 imageVector = Icons.Default.FileDownload,
                                 contentDescription = "Export as TOON",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        IconButton(
+                            onClick = { viewModel.onEvent(ChatEvent.OnExportJson) }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Code,
+                                contentDescription = "Export as JSON",
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }
@@ -729,5 +797,98 @@ private fun EmptyStateContent() {
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 8.dp)
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun JsonExportDialog(
+    jsonData: String,
+    onDismiss: () -> Unit,
+    onCopy: () -> Unit
+) {
+    BasicAlertDialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "📄 JSON Export",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close"
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Text(
+                    text = "Vector Index JSON",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(400.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .verticalScroll(rememberScrollState())
+                            .padding(12.dp)
+                    ) {
+                        Text(
+                            text = jsonData,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onCopy) {
+                        Text("Copy to Clipboard")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    TextButton(onClick = onDismiss) {
+                        Text("Close")
+                    }
+                }
+            }
+        }
     }
 }

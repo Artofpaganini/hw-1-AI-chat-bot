@@ -20,6 +20,14 @@ import com.example.aiagentchat.feature.chat.domain.usecase.ExportChatHistoryUseC
 import com.example.aiagentchat.feature.chat.domain.usecase.SendMessageUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.SwitchAiModelUseCase
 import com.example.aiagentchat.feature.chat.data.api.ChatMessageDto
+import com.example.aiagentchat.feature.chat.data.service.TextIndexingService
+import com.example.aiagentchat.feature.chat.data.service.VectorJsonService
+import com.example.aiagentchat.feature.chat.data.service.VectorChunk
+import com.example.aiagentchat.feature.chat.data.service.MatchedChunk
+import com.example.aiagentchat.feature.chat.data.api.OllamaApi
+import android.os.Environment
+import java.io.File
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -29,6 +37,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 
 class ChatViewModel(
     private val sendMessageUseCase: SendMessageUseCase,
@@ -42,7 +51,10 @@ class ChatViewModel(
     private val mcpRepository: McpRepository,
     private val multiMcpRepository: MultiMcpRepository,
     private val preferencesManager: com.example.aiagentchat.core.common.preferences.PreferencesManager,
-    private val weatherWorkManager: com.example.aiagentchat.feature.chat.data.worker.WeatherWorkManager
+    private val weatherWorkManager: com.example.aiagentchat.feature.chat.data.worker.WeatherWorkManager,
+    private val textIndexingService: TextIndexingService,
+    private val vectorJsonService: VectorJsonService,
+    private val ollamaApi: OllamaApi
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChatUiState())
@@ -67,6 +79,7 @@ class ChatViewModel(
         loadTestModeState()
         loadRemoteControlState()
         loadRemoteControlDeviceId()
+        loadOllamaState()
     }
 
     fun onAction(action: ChatAction) {
@@ -87,6 +100,9 @@ class ChatViewModel(
             is ChatAction.ToggleTestMode -> handleToggleTestMode(action.enabled)
             is ChatAction.ToggleRemoteControl -> handleToggleRemoteControl(action.enabled)
             is ChatAction.SetRemoteControlDeviceId -> handleSetRemoteControlDeviceId(action.deviceId)
+            is ChatAction.ToggleOllama -> handleToggleOllama(action.enabled)
+            is ChatAction.ExportJson -> handleExportJson()
+            is ChatAction.DismissJsonExport -> handleDismissJsonExport()
         }
     }
     
@@ -100,6 +116,11 @@ class ChatViewModel(
             is ChatEvent.OnClearChat -> handleClearChat()
             is ChatEvent.OnExportChat -> handleExportChat()
             is ChatEvent.OnDismissExport -> handleDismissExport()
+            is ChatEvent.OnExportJson -> handleExportJson()
+            is ChatEvent.OnDismissJsonExport -> handleDismissJsonExport()
+            is ChatEvent.ShowJsonExport -> {
+                _uiState.update { it.copy(exportedJson = event.json) }
+            }
             is ChatEvent.ShowError -> handleDismissError()
             is ChatEvent.ShowExport -> { /* handled in UI */ }
         }
@@ -170,12 +191,19 @@ class ChatViewModel(
 
             val messagesWithContext = buildMessagesWithContext(currentInput)
 
+            // Передаем MCP tools только если они включены и Ollama не включен
+            val ollamaEnabled = _uiState.value.ollamaEnabled
+            val enabledMcpTools = if (ollamaEnabled) emptySet() else _uiState.value.enabledMcpTools
+            val enabledMcpServerTools = if (ollamaEnabled) emptyMap() else _uiState.value.enabledMcpServerTools
+            
+            android.util.Log.d("ChatViewModel", "Sending message - Ollama: $ollamaEnabled, MCP tools: ${enabledMcpTools.size}, MCP servers: ${enabledMcpServerTools.size}")
+            
             sendMessageUseCase(
                 model = _uiState.value.selectedModel,
                 messages = messagesWithContext,
-                enabledMcpTools = _uiState.value.enabledMcpTools,
-                enabledMcpServerTools = _uiState.value.enabledMcpServerTools,
-                remoteControlDeviceId = if (_uiState.value.remoteControlEnabled) _uiState.value.remoteControlDeviceId else null
+                enabledMcpTools = enabledMcpTools,
+                enabledMcpServerTools = enabledMcpServerTools,
+                remoteControlDeviceId = if (_uiState.value.remoteControlEnabled && !ollamaEnabled) _uiState.value.remoteControlDeviceId else null
             )
                 .onSuccess { aiMessage ->
                     chatRepository.saveMessage(aiMessage)
@@ -242,6 +270,18 @@ class ChatViewModel(
 
     private fun handleDismissExport() {
         _uiState.update { it.copy(exportedToon = null) }
+    }
+    
+    private fun handleExportJson() {
+        val jsonContent = vectorJsonService.getJsonContent()
+        _uiState.update { it.copy(exportedJson = jsonContent) }
+        viewModelScope.launch {
+            _events.emit(ChatEvent.ShowJsonExport(jsonContent))
+        }
+    }
+    
+    private fun handleDismissJsonExport() {
+        _uiState.update { it.copy(exportedJson = null) }
     }
 
     private fun handleCheckMessageThreshold(message: Message) {
@@ -446,12 +486,291 @@ class ChatViewModel(
         preferencesManager.remoteControlDeviceId = deviceId
         _uiState.update { it.copy(remoteControlDeviceId = deviceId) }
     }
+    
+    private fun loadOllamaState() {
+        val enabled = preferencesManager.ollamaEnabled
+        _uiState.update { it.copy(ollamaEnabled = enabled) }
+        if (enabled) {
+            // Проверяем доступность Ollama сервера перед началом индексации
+            checkOllamaConnection()
+            startIndexingIfNeeded()
+        }
+    }
+    
+    private fun handleToggleOllama(enabled: Boolean) {
+        android.util.Log.d("ChatViewModel", "Toggle Ollama: $enabled")
+        preferencesManager.ollamaEnabled = enabled
+        _uiState.update { it.copy(ollamaEnabled = enabled) }
+        if (enabled) {
+            // Проверяем доступность Ollama сервера перед началом индексации
+            checkOllamaConnection()
+            startIndexingIfNeeded()
+        }
+    }
+    
+    private fun checkOllamaConnection() {
+        viewModelScope.launch {
+            try {
+                android.util.Log.i("ChatViewModel", "🔍 Checking Ollama server connection at http://10.0.2.2:11434...")
+                // Пробуем простой запрос для проверки доступности
+                val testRequest = com.example.aiagentchat.feature.chat.data.api.OllamaEmbedRequest(
+                    model = OllamaApi.DEFAULT_MODEL,
+                    input = "test"
+                )
+                val response = ollamaApi.generateEmbedding(testRequest)
+                if (response.isSuccessful) {
+                    android.util.Log.i("ChatViewModel", "✅ Ollama server is accessible at http://10.0.2.2:11434")
+                } else {
+                    android.util.Log.w("ChatViewModel", "⚠️ Ollama server responded with error: ${response.code()}")
+                }
+            } catch (e: java.net.ConnectException) {
+                android.util.Log.e("ChatViewModel", "❌ Cannot connect to Ollama server at http://10.0.2.2:11434")
+                android.util.Log.e("ChatViewModel", "Make sure:")
+                android.util.Log.e("ChatViewModel", "1. Ollama is running on your Mac: ollama serve")
+                android.util.Log.e("ChatViewModel", "2. Test from Mac: curl http://localhost:11434/api/tags")
+                android.util.Log.e("ChatViewModel", "3. Test from emulator: adb shell curl http://10.0.2.2:11434/api/tags")
+                _events.emit(ChatEvent.ShowError("Cannot connect to Ollama server. Make sure Ollama is running on your Mac."))
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "Error checking Ollama connection", e)
+            }
+        }
+    }
+    
+    private fun startIndexingIfNeeded() {
+        viewModelScope.launch {
+            try {
+                // Используем внутреннее хранилище приложения или внешнее с проверкой разрешений
+                val context = weatherWorkManager.getContext()
+                
+                android.util.Log.i("ChatViewModel", "🔍 Searching for README.md file...")
+                
+                var foundFile: File? = null
+                val checkedPaths = mutableListOf<String>()
+                
+                // 1. Внутреннее хранилище приложения (filesDir) - не требует разрешений
+                val internalStorageDir = context.filesDir
+                val internalReadmeFile = File(internalStorageDir, "README.md")
+                checkedPaths.add("Internal storage: ${internalReadmeFile.absolutePath}")
+                android.util.Log.d("ChatViewModel", "Checking: ${internalReadmeFile.absolutePath} (exists: ${internalReadmeFile.exists()})")
+                
+                if (internalReadmeFile.exists() && internalReadmeFile.canRead()) {
+                    foundFile = internalReadmeFile
+                    android.util.Log.i("ChatViewModel", "✅ Found README.md in internal storage: ${foundFile.absolutePath}")
+                } else {
+                    // 2. Внешнее хранилище приложения (getExternalFilesDir) - не требует разрешений
+                    val externalStorageDir = context.getExternalFilesDir(null)
+                    if (externalStorageDir != null) {
+                        val externalReadmeFile = File(externalStorageDir, "README.md")
+                        checkedPaths.add("External app storage: ${externalReadmeFile.absolutePath}")
+                        android.util.Log.d("ChatViewModel", "Checking: ${externalReadmeFile.absolutePath} (exists: ${externalReadmeFile.exists()})")
+                        
+                        if (externalReadmeFile.exists() && externalReadmeFile.canRead()) {
+                            foundFile = externalReadmeFile
+                            android.util.Log.i("ChatViewModel", "✅ Found README.md in external app storage: ${foundFile.absolutePath}")
+                        }
+                    } else {
+                        checkedPaths.add("External app storage: null (not available)")
+                        android.util.Log.w("ChatViewModel", "External app storage is not available")
+                    }
+                    
+                    // 3. Стандартные пути внешнего хранилища (требуют разрешений)
+                    if (foundFile == null) {
+                        val alternativePaths = listOf(
+                            File(android.os.Environment.getExternalStorageDirectory(), "README.md"),
+                            File("/sdcard/README.md"),
+                            File("/storage/emulated/0/README.md"),
+                            File("/storage/emulated/0/Download/README.md"),
+                            File("/storage/emulated/0/Documents/README.md")
+                        )
+                        
+                        for (path in alternativePaths) {
+                            checkedPaths.add("External storage: ${path.absolutePath}")
+                            try {
+                                android.util.Log.d("ChatViewModel", "Checking: ${path.absolutePath} (exists: ${path.exists()}, canRead: ${path.canRead()})")
+                                if (path.exists() && path.canRead()) {
+                                    foundFile = path
+                                    android.util.Log.i("ChatViewModel", "✅ Found README.md at: ${foundFile.absolutePath}")
+                                    break
+                                }
+                            } catch (e: SecurityException) {
+                                android.util.Log.w("ChatViewModel", "⚠️ Cannot access ${path.absolutePath}: ${e.message}")
+                            } catch (e: Exception) {
+                                android.util.Log.w("ChatViewModel", "⚠️ Error checking ${path.absolutePath}: ${e.message}")
+                            }
+                        }
+                    }
+                }
+                
+                if (foundFile == null) {
+                    android.util.Log.e("ChatViewModel", "❌ README.md not found in any location")
+                    android.util.Log.e("ChatViewModel", "Checked paths:")
+                    checkedPaths.forEach { path ->
+                        android.util.Log.e("ChatViewModel", "  - $path")
+                    }
+                    
+                    val errorMessage = buildString {
+                        appendLine("README.md file not found.")
+                        appendLine()
+                        appendLine("Checked locations:")
+                        checkedPaths.take(5).forEach { appendLine("  • $it") }
+                        appendLine()
+                        appendLine("To fix:")
+                        appendLine("1. Copy README.md to internal storage:")
+                        appendLine("   adb push README.md /sdcard/README.md")
+                        appendLine("   adb shell \"run-as com.example.aiagentchat cp /sdcard/README.md /data/data/com.example.aiagentchat/files/README.md\"")
+                        appendLine()
+                        appendLine("2. Or grant storage permissions and copy to /sdcard/README.md")
+                    }
+                    
+                    // Пробуем создать тестовый файл во внутреннем хранилище для демонстрации
+                    android.util.Log.i("ChatViewModel", "💡 Creating sample README.md in internal storage for testing...")
+                    try {
+                        val sampleContent = """
+# Sample Document for Vector Search
 
-    private fun buildMessagesWithContext(currentInput: String): List<ChatMessageDto> {
+This is a sample document created automatically for testing vector search functionality.
+
+## Features
+
+- Vector embeddings generation
+- Semantic search
+- Document indexing
+
+## Usage
+
+Ask questions about this document to test the vector search feature.
+
+## Example Questions
+
+- What is this document about?
+- What features are mentioned?
+- How does vector search work?
+
+                        """.trimIndent()
+                        
+                        val internalStorageDir = context.filesDir
+                        val sampleFile = File(internalStorageDir, "README.md")
+                        sampleFile.writeText(sampleContent)
+                        
+                        if (sampleFile.exists() && sampleFile.canRead()) {
+                            foundFile = sampleFile
+                            android.util.Log.i("ChatViewModel", "✅ Created sample README.md at: ${foundFile.absolutePath}")
+                            _events.emit(ChatEvent.ShowError("ℹ️ Created sample README.md for testing. You can replace it with your own file."))
+                        } else {
+                            _events.emit(ChatEvent.ShowError(errorMessage))
+                            return@launch
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("ChatViewModel", "Failed to create sample file", e)
+                        _events.emit(ChatEvent.ShowError(errorMessage))
+                        return@launch
+                    }
+                }
+                
+                val needsIndexing = textIndexingService.checkIfIndexingNeeded(
+                    foundFile.absolutePath,
+                    "README.md"
+                )
+                
+                if (needsIndexing) {
+                    android.util.Log.i("ChatViewModel", "🚀 Starting indexing of README.md")
+                    
+                    // Запускаем наблюдение за прогрессом в отдельной корутине
+                    val progressJob = viewModelScope.launch {
+                        textIndexingService.indexingProgress.collect { progress ->
+                            progress?.let {
+                                val percent = it.percentage.toInt()
+                                android.util.Log.i("ChatViewModel", 
+                                    "📊 Indexing progress: $percent% - ${it.status} (chunk ${it.currentChunk}/${it.totalChunks})")
+                            }
+                        }
+                    }
+                    
+                    textIndexingService.indexFile(
+                        foundFile.absolutePath,
+                        "README.md"
+                    ).onSuccess {
+                        progressJob.cancel()
+                        android.util.Log.i("ChatViewModel", "✅ Indexing completed successfully")
+                        _events.emit(ChatEvent.ShowError("✅ Vector indexing completed successfully! You can now ask questions about the document."))
+                    }.onFailure { error ->
+                        progressJob.cancel()
+                        android.util.Log.e("ChatViewModel", "❌ Indexing failed", error)
+                        _events.emit(ChatEvent.ShowError("Indexing failed: ${error.message}"))
+                    }
+                } else {
+                    val index = vectorJsonService.loadVectorIndex()
+                    val totalChunks = index.documents.sumOf { it.chunks.size }
+                    android.util.Log.i("ChatViewModel", "✅ File already indexed ($totalChunks chunks), ready to use")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "Error checking indexing", e)
+                _events.emit(ChatEvent.ShowError("Error: ${e.message}"))
+            }
+        }
+    }
+
+    private suspend fun buildMessagesWithContext(currentInput: String): List<ChatMessageDto> {
         val enabledMcpTools = _uiState.value.enabledMcpTools
+        val enabledMcpServerTools = _uiState.value.enabledMcpServerTools
+        val ollamaEnabled = _uiState.value.ollamaEnabled
         
-        // Если включены MCP tools, отправляем только текущий вопрос без контекста
-        if (enabledMcpTools.isNotEmpty()) {
+        // Проверяем, есть ли включенные MCP tools
+        val hasEnabledMcpTools = enabledMcpTools.isNotEmpty() || enabledMcpServerTools.values.any { it.isNotEmpty() }
+        
+        // Если включен Ollama, используем векторный поиск (приоритет над MCP tools)
+        if (ollamaEnabled) {
+            val index = vectorJsonService.loadVectorIndex()
+            val hasVectors = index.documents.isNotEmpty()
+            
+            if (hasVectors) {
+                try {
+                    val queryEmbedding = generateQueryEmbedding(currentInput)
+                    val matchedChunks = findSimilarVectorsInJson(queryEmbedding, index, limit = 3)
+                    
+                    if (matchedChunks.isNotEmpty()) {
+                        // Обновляем JSON с текущим запросом
+                        vectorJsonService.updateQuery(currentInput, queryEmbedding, matchedChunks)
+                        
+                        val contextText = matchedChunks.joinToString("\n\n---\n\n") { it.text }
+                        val enhancedInput = buildString {
+                            appendLine("Based on the following context from indexed documents, please answer the user's question:")
+                            appendLine()
+                            appendLine("=== RELEVANT CONTEXT ===")
+                            appendLine(contextText)
+                            appendLine("=== END OF CONTEXT ===")
+                            appendLine()
+                            appendLine("=== USER QUESTION ===")
+                            appendLine(currentInput)
+                            appendLine("=== END OF QUESTION ===")
+                        }
+                        android.util.Log.d("ChatViewModel", "Using vector search context with ${matchedChunks.size} chunks")
+                        return listOf(
+                            ChatMessageDto(role = "user", content = enhancedInput)
+                        )
+                    } else {
+                        android.util.Log.w("ChatViewModel", "No similar vectors found for query")
+                        // Все равно обновляем JSON с запросом
+                        vectorJsonService.updateQuery(currentInput, queryEmbedding, emptyList())
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("ChatViewModel", "Error in vector search", e)
+                }
+            } else {
+                val progress = textIndexingService.indexingProgress.first()
+                val progressText = progress?.let {
+                    "Indexing in progress: ${it.percentage.toInt()}% (${it.currentChunk}/${it.totalChunks})"
+                } ?: "Indexing vectors..."
+                
+                return listOf(
+                    ChatMessageDto(role = "user", content = "$currentInput\n\nNote: $progressText")
+                )
+            }
+        }
+        
+        // Если включены MCP tools (но не Ollama), отправляем только текущий вопрос без контекста
+        if (hasEnabledMcpTools) {
+            android.util.Log.d("ChatViewModel", "Using MCP tools, skipping context")
             return listOf(
                 ChatMessageDto(role = "user", content = currentInput)
             )
@@ -520,6 +839,119 @@ class ChatViewModel(
         messages.add(ChatMessageDto(role = "user", content = currentInput))
         
         return messages
+    }
+    
+    private suspend fun generateQueryEmbedding(text: String): List<Float> {
+        android.util.Log.d("ChatViewModel", "Generating query embedding for: ${text.take(50)}...")
+        
+        val request = com.example.aiagentchat.feature.chat.data.api.OllamaEmbedRequest(
+            model = OllamaApi.DEFAULT_MODEL,
+            input = text
+        )
+        
+        try {
+            val response = ollamaApi.generateEmbedding(request)
+            
+            if (!response.isSuccessful) {
+                val errorBody = response.errorBody()?.string() ?: "Unknown error"
+                val errorMsg = "Failed to generate query embedding: HTTP ${response.code()} - $errorBody"
+                android.util.Log.e("ChatViewModel", errorMsg)
+                android.util.Log.e("ChatViewModel", "Check if Ollama server is running at: http://10.0.2.2:11434")
+                throw Exception(errorMsg)
+            }
+            
+            val responseBody = response.body()
+            if (responseBody == null) {
+                throw Exception("Empty response body from Ollama")
+            }
+            
+            val embeddings = responseBody.embeddings
+            if (embeddings.isEmpty()) {
+                throw Exception("Empty embedding response from Ollama")
+            }
+            
+            val embedding = embeddings[0]
+            android.util.Log.d("ChatViewModel", "✅ Generated query embedding with ${embedding.size} dimensions")
+            return normalizeVector(embedding)
+        } catch (e: java.net.UnknownHostException) {
+            val errorMsg = "Cannot connect to Ollama server. Make sure Ollama is running on your Mac at http://localhost:11434"
+            android.util.Log.e("ChatViewModel", errorMsg, e)
+            throw Exception(errorMsg, e)
+        } catch (e: java.net.ConnectException) {
+            val errorMsg = "Connection refused to Ollama server. Is Ollama running? Test: curl http://localhost:11434/api/tags"
+            android.util.Log.e("ChatViewModel", errorMsg, e)
+            throw Exception(errorMsg, e)
+        } catch (e: java.net.SocketTimeoutException) {
+            val errorMsg = "Timeout connecting to Ollama server. Check network connection."
+            android.util.Log.e("ChatViewModel", errorMsg, e)
+            throw Exception(errorMsg, e)
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "Error generating query embedding", e)
+            throw e
+        }
+    }
+    
+    private fun normalizeVector(vector: List<Float>): List<Float> {
+        val min = vector.minOrNull() ?: 0f
+        val max = vector.maxOrNull() ?: 1f
+        val range = max - min
+        
+        return if (range > 0) {
+            vector.map { (it - min) / range }
+        } else {
+            vector.map { 0.5f }
+        }
+    }
+    
+    private fun findSimilarVectorsInJson(
+        queryEmbedding: List<Float>,
+        index: com.example.aiagentchat.feature.chat.data.service.VectorIndexJson,
+        limit: Int
+    ): List<MatchedChunk> {
+        val allChunks = index.documents.flatMap { doc ->
+            doc.chunks.map { chunk ->
+                Pair(chunk, doc.fileName)
+            }
+        }
+        
+        if (allChunks.isEmpty()) {
+            return emptyList()
+        }
+        
+        val similarities = allChunks.map { (chunk, fileName) ->
+            val similarity = cosineSimilarity(queryEmbedding, chunk.embedding)
+            MatchedChunk(
+                text = chunk.text,
+                chunkIndex = chunk.chunkIndex,
+                similarity = similarity
+            )
+        }.sortedByDescending { it.similarity }
+            .take(limit)
+        
+        return similarities
+    }
+    
+    private fun cosineSimilarity(vec1: List<Float>, vec2: List<Float>): Float {
+        if (vec1.size != vec2.size) {
+            return 0f
+        }
+        
+        var dotProduct = 0f
+        var norm1 = 0f
+        var norm2 = 0f
+        
+        for (i in vec1.indices) {
+            dotProduct += vec1[i] * vec2[i]
+            norm1 += vec1[i] * vec1[i]
+            norm2 += vec2[i] * vec2[i]
+        }
+        
+        val denominator = kotlin.math.sqrt(norm1) * kotlin.math.sqrt(norm2)
+        return if (denominator > 0) {
+            dotProduct / denominator
+        } else {
+            0f
+        }
     }
 }
 

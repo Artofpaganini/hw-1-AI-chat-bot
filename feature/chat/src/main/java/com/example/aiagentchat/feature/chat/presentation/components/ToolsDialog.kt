@@ -52,6 +52,8 @@ fun ToolsDialog(
     onRemoteControlToggle: (Boolean) -> Unit = {},
     remoteControlDeviceId: String? = null,
     onRemoteControlDeviceIdChange: (String?) -> Unit = {},
+    ollamaEnabled: Boolean = false,
+    onOllamaToggle: (Boolean) -> Unit = {},
     mcpServers: List<McpServer> = emptyList(),
     enabledMcpServerTools: Map<String, Set<String>> = emptyMap(),
     onServerToolToggle: (String, String, Boolean) -> Unit = { _, _, _ -> }
@@ -127,6 +129,14 @@ fun ToolsDialog(
                             onToggle = onRemoteControlToggle,
                             deviceId = remoteControlDeviceId,
                             onDeviceIdChange = onRemoteControlDeviceIdChange
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                        )
+                        OllamaItem(
+                            enabled = ollamaEnabled,
+                            onToggle = onOllamaToggle
                         )
                         if (mcpServers.isNotEmpty()) {
                             HorizontalDivider(
@@ -307,6 +317,51 @@ private fun TestModeItem(
                     )
                     Text(
                         text = "Use Foreground Service for testing (notifications every 1 minute, works when app is in background)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onToggle
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OllamaItem(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "Ollama Vector Search",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Enable vector search using Ollama embeddings. Indexes README.md for semantic search in chat.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp)

@@ -26,7 +26,9 @@ data class ChatUiState(
     val weatherNotificationsEnabled: Boolean = false,
     val testModeEnabled: Boolean = false,
     val remoteControlEnabled: Boolean = false,
-    val remoteControlDeviceId: String? = null
+    val remoteControlDeviceId: String? = null,
+    val ollamaEnabled: Boolean = false,
+    val exportedJson: String? = null
 )
 
 sealed interface ChatAction {
@@ -46,6 +48,9 @@ sealed interface ChatAction {
     data class ToggleTestMode(val enabled: Boolean) : ChatAction
     data class ToggleRemoteControl(val enabled: Boolean) : ChatAction
     data class SetRemoteControlDeviceId(val deviceId: String?) : ChatAction
+    data class ToggleOllama(val enabled: Boolean) : ChatAction
+    data object ExportJson : ChatAction
+    data object DismissJsonExport : ChatAction
 }
 
 sealed interface ChatEvent {
@@ -58,5 +63,8 @@ sealed interface ChatEvent {
     data object OnClearChat : ChatEvent
     data object OnExportChat : ChatEvent
     data object OnDismissExport : ChatEvent
+    data class ShowJsonExport(val json: String) : ChatEvent
+    data object OnExportJson : ChatEvent
+    data object OnDismissJsonExport : ChatEvent
 }
 

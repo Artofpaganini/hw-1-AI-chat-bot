@@ -47,6 +47,7 @@ val appModule = module {
 
     single<ChatMessageDao> { get<ChatDatabase>().chatMessageDao() }
     single<ContextSummaryDao> { get<ChatDatabase>().contextSummaryDao() }
+    single<com.example.aiagentchat.core.database.dao.VectorDao> { get<ChatDatabase>().vectorDao() }
 
     single {
         com.example.aiagentchat.feature.chat.data.AuthManager(
@@ -134,6 +135,30 @@ val appModule = module {
     single<com.example.aiagentchat.di.WeatherWorkerFactory> {
         com.example.aiagentchat.di.WeatherWorkerFactory()
     }
+    
+    single<com.example.aiagentchat.feature.chat.data.api.OllamaApi> {
+        com.example.aiagentchat.feature.chat.data.api.OllamaApi.create()
+    }
+    
+    single<com.example.aiagentchat.feature.chat.data.service.VectorJsonService> {
+        com.example.aiagentchat.feature.chat.data.service.VectorJsonService(
+            context = androidContext()
+        )
+    }
+    
+    single<com.example.aiagentchat.feature.chat.data.service.TextIndexingService> {
+        com.example.aiagentchat.feature.chat.data.service.TextIndexingService(
+            context = androidContext(),
+            ollamaApi = get(),
+            vectorJsonService = get()
+        )
+    }
+    
+    single<com.example.aiagentchat.feature.chat.domain.repository.VectorRepository> {
+        com.example.aiagentchat.feature.chat.data.repository.VectorRepositoryImpl(
+            vectorDao = get()
+        )
+    }
 
     viewModel {
         ChatViewModel(
@@ -148,7 +173,10 @@ val appModule = module {
             mcpRepository = get(),
             multiMcpRepository = get(),
             preferencesManager = get(),
-            weatherWorkManager = get()
+            weatherWorkManager = get(),
+            textIndexingService = get(),
+            vectorJsonService = get(),
+            ollamaApi = get()
         )
     }
 }

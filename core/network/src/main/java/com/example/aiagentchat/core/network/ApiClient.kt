@@ -58,9 +58,9 @@ object ApiClient {
 
     private val localOkHttpClient = OkHttpClient.Builder()
         .addInterceptor(loggingInterceptor)
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(60, TimeUnit.SECONDS) // Увеличено для Ollama (может быть медленным)
+        .readTimeout(120, TimeUnit.SECONDS) // Увеличено для генерации embeddings
+        .writeTimeout(60, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
 
