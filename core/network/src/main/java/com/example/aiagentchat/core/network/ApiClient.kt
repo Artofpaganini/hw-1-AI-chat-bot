@@ -56,8 +56,34 @@ object ApiClient {
         .followSslRedirects(true)
         .build()
 
+    // DNS для локальных адресов - прямое разрешение IP без DNS запросов
+    private val localDns = object : Dns {
+        override fun lookup(hostname: String): List<InetAddress> {
+            return try {
+                when {
+                    hostname == "10.0.2.2" -> {
+                        Log.d(TAG, "Direct IP resolution for 10.0.2.2 (emulator localhost)")
+                        listOf(InetAddress.getByName("10.0.2.2"))
+                    }
+                    hostname == "localhost" || hostname == "127.0.0.1" -> {
+                        Log.d(TAG, "Direct IP resolution for localhost")
+                        listOf(InetAddress.getByName("127.0.0.1"))
+                    }
+                    else -> {
+                        Log.d(TAG, "Resolving local hostname: $hostname")
+                        SystemDns.lookup(hostname)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to resolve local hostname: $hostname", e)
+                throw e
+            }
+        }
+    }
+    
     private val localOkHttpClient = OkHttpClient.Builder()
         .addInterceptor(loggingInterceptor)
+        .dns(localDns) // Используем специальный DNS для локальных адресов
         .connectTimeout(60, TimeUnit.SECONDS) // Увеличено для Ollama (может быть медленным)
         .readTimeout(120, TimeUnit.SECONDS) // Увеличено для генерации embeddings
         .writeTimeout(60, TimeUnit.SECONDS)
@@ -71,10 +97,11 @@ object ApiClient {
                      baseUrl.contains("127.0.0.1")
         
         val client = if (isLocal) {
-            Log.d(TAG, "Using local OkHttp client (no DNS) for: $baseUrl")
+            Log.d(TAG, "Using local OkHttp client (with local DNS resolver) for: $baseUrl")
+            Log.d(TAG, "Local addresses (10.0.2.2, localhost, 127.0.0.1) will be resolved directly")
             localOkHttpClient
         } else {
-            Log.d(TAG, "Using internet OkHttp client (with DNS) for: $baseUrl")
+            Log.d(TAG, "Using internet OkHttp client (with DNS resolver) for: $baseUrl")
             internetOkHttpClient
         }
         

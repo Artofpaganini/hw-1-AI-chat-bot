@@ -101,6 +101,7 @@ class ChatViewModel(
             is ChatAction.ToggleRemoteControl -> handleToggleRemoteControl(action.enabled)
             is ChatAction.SetRemoteControlDeviceId -> handleSetRemoteControlDeviceId(action.deviceId)
             is ChatAction.ToggleOllama -> handleToggleOllama(action.enabled)
+            is ChatAction.SelectOllamaFile -> handleSelectOllamaFile(action.filePath)
             is ChatAction.ExportJson -> handleExportJson()
             is ChatAction.DismissJsonExport -> handleDismissJsonExport()
         }
@@ -491,9 +492,9 @@ class ChatViewModel(
         val enabled = preferencesManager.ollamaEnabled
         _uiState.update { it.copy(ollamaEnabled = enabled) }
         if (enabled) {
-            // Проверяем доступность Ollama сервера перед началом индексации
+            // Проверяем доступность Ollama сервера
             checkOllamaConnection()
-            startIndexingIfNeeded()
+            // Файл должен быть выбран пользователем
         }
     }
     
@@ -502,9 +503,24 @@ class ChatViewModel(
         preferencesManager.ollamaEnabled = enabled
         _uiState.update { it.copy(ollamaEnabled = enabled) }
         if (enabled) {
-            // Проверяем доступность Ollama сервера перед началом индексации
+            // При включении Ollama проверяем подключение
+            android.util.Log.i("ChatViewModel", "🚀 Ollama enabled - checking server connection...")
+            android.util.Log.i("ChatViewModel", "📝 Note: Run './setup-ollama.sh' on your Mac to start Ollama server")
             checkOllamaConnection()
-            startIndexingIfNeeded()
+            // Файл должен быть выбран пользователем через file picker
+            // Индексация начнется после выбора файла
+        } else {
+            // При выключении очищаем выбранный файл
+            _uiState.update { it.copy(ollamaSelectedFile = null) }
+        }
+    }
+    
+    private fun handleSelectOllamaFile(filePath: String?) {
+        android.util.Log.d("ChatViewModel", "Select Ollama file: $filePath")
+        _uiState.update { it.copy(ollamaSelectedFile = filePath) }
+        if (filePath != null && _uiState.value.ollamaEnabled) {
+            // Если Ollama включен и файл выбран, начинаем индексацию
+            startIndexingForFile(filePath)
         }
     }
     
@@ -512,169 +528,79 @@ class ChatViewModel(
         viewModelScope.launch {
             try {
                 android.util.Log.i("ChatViewModel", "🔍 Checking Ollama server connection at http://10.0.2.2:11434...")
-                // Пробуем простой запрос для проверки доступности
-                val testRequest = com.example.aiagentchat.feature.chat.data.api.OllamaEmbedRequest(
-                    model = OllamaApi.DEFAULT_MODEL,
-                    input = "test"
-                )
-                val response = ollamaApi.generateEmbedding(testRequest)
+                
+                // Используем простой GET запрос для проверки доступности сервера
+                val response = ollamaApi.getTags()
+                
                 if (response.isSuccessful) {
+                    val tagsResponse = response.body()
+                    val modelCount = tagsResponse?.models?.size ?: 0
                     android.util.Log.i("ChatViewModel", "✅ Ollama server is accessible at http://10.0.2.2:11434")
+                    android.util.Log.i("ChatViewModel", "📦 Found $modelCount model(s) on server")
+                    
+                    // Проверяем наличие нужной модели
+                    val hasEmbeddingModel = tagsResponse?.models?.any { 
+                        it.name.contains("nomic-embed-text", ignoreCase = true) 
+                    } ?: false
+                    
+                    if (hasEmbeddingModel) {
+                        android.util.Log.i("ChatViewModel", "✅ Embedding model 'nomic-embed-text' is available")
+                    } else {
+                        android.util.Log.w("ChatViewModel", "⚠️ Embedding model 'nomic-embed-text' not found. Run: ollama pull nomic-embed-text")
+                        _events.emit(ChatEvent.ShowError("⚠️ Embedding model not found. Please run: ollama pull nomic-embed-text"))
+                    }
                 } else {
-                    android.util.Log.w("ChatViewModel", "⚠️ Ollama server responded with error: ${response.code()}")
+                    val errorBody = response.errorBody()?.string() ?: "Unknown error"
+                    android.util.Log.w("ChatViewModel", "⚠️ Ollama server responded with error: ${response.code()} - $errorBody")
+                    _events.emit(ChatEvent.ShowError("Ollama server responded with error: ${response.code()}"))
                 }
             } catch (e: java.net.ConnectException) {
                 android.util.Log.e("ChatViewModel", "❌ Cannot connect to Ollama server at http://10.0.2.2:11434")
+                android.util.Log.e("ChatViewModel", "Connection error: ${e.message}")
                 android.util.Log.e("ChatViewModel", "Make sure:")
                 android.util.Log.e("ChatViewModel", "1. Ollama is running on your Mac: ollama serve")
                 android.util.Log.e("ChatViewModel", "2. Test from Mac: curl http://localhost:11434/api/tags")
                 android.util.Log.e("ChatViewModel", "3. Test from emulator: adb shell curl http://10.0.2.2:11434/api/tags")
-                _events.emit(ChatEvent.ShowError("Cannot connect to Ollama server. Make sure Ollama is running on your Mac."))
+                android.util.Log.e("ChatViewModel", "4. Check firewall settings on Mac")
+                _events.emit(ChatEvent.ShowError("Cannot connect to Ollama server. Make sure Ollama is running on your Mac and accessible via http://10.0.2.2:11434"))
+            } catch (e: java.net.SocketTimeoutException) {
+                android.util.Log.e("ChatViewModel", "❌ Timeout connecting to Ollama server")
+                android.util.Log.e("ChatViewModel", "Timeout error: ${e.message}")
+                _events.emit(ChatEvent.ShowError("Timeout connecting to Ollama server. Check network connection and firewall settings."))
+            } catch (e: java.net.UnknownHostException) {
+                android.util.Log.e("ChatViewModel", "❌ Unknown host: ${e.message}")
+                android.util.Log.e("ChatViewModel", "DNS resolution failed. Check network configuration.")
+                _events.emit(ChatEvent.ShowError("Cannot resolve Ollama server address. Check network configuration."))
             } catch (e: Exception) {
-                android.util.Log.e("ChatViewModel", "Error checking Ollama connection", e)
+                android.util.Log.e("ChatViewModel", "❌ Error checking Ollama connection", e)
+                android.util.Log.e("ChatViewModel", "Error type: ${e.javaClass.simpleName}, message: ${e.message}")
+                _events.emit(ChatEvent.ShowError("Error checking Ollama connection: ${e.message}"))
             }
         }
     }
     
-    private fun startIndexingIfNeeded() {
+    private fun startIndexingForFile(filePath: String) {
         viewModelScope.launch {
             try {
-                // Используем внутреннее хранилище приложения или внешнее с проверкой разрешений
-                val context = weatherWorkManager.getContext()
-                
-                android.util.Log.i("ChatViewModel", "🔍 Searching for README.md file...")
-                
-                var foundFile: File? = null
-                val checkedPaths = mutableListOf<String>()
-                
-                // 1. Внутреннее хранилище приложения (filesDir) - не требует разрешений
-                val internalStorageDir = context.filesDir
-                val internalReadmeFile = File(internalStorageDir, "README.md")
-                checkedPaths.add("Internal storage: ${internalReadmeFile.absolutePath}")
-                android.util.Log.d("ChatViewModel", "Checking: ${internalReadmeFile.absolutePath} (exists: ${internalReadmeFile.exists()})")
-                
-                if (internalReadmeFile.exists() && internalReadmeFile.canRead()) {
-                    foundFile = internalReadmeFile
-                    android.util.Log.i("ChatViewModel", "✅ Found README.md in internal storage: ${foundFile.absolutePath}")
-                } else {
-                    // 2. Внешнее хранилище приложения (getExternalFilesDir) - не требует разрешений
-                    val externalStorageDir = context.getExternalFilesDir(null)
-                    if (externalStorageDir != null) {
-                        val externalReadmeFile = File(externalStorageDir, "README.md")
-                        checkedPaths.add("External app storage: ${externalReadmeFile.absolutePath}")
-                        android.util.Log.d("ChatViewModel", "Checking: ${externalReadmeFile.absolutePath} (exists: ${externalReadmeFile.exists()})")
-                        
-                        if (externalReadmeFile.exists() && externalReadmeFile.canRead()) {
-                            foundFile = externalReadmeFile
-                            android.util.Log.i("ChatViewModel", "✅ Found README.md in external app storage: ${foundFile.absolutePath}")
-                        }
-                    } else {
-                        checkedPaths.add("External app storage: null (not available)")
-                        android.util.Log.w("ChatViewModel", "External app storage is not available")
-                    }
-                    
-                    // 3. Стандартные пути внешнего хранилища (требуют разрешений)
-                    if (foundFile == null) {
-                        val alternativePaths = listOf(
-                            File(android.os.Environment.getExternalStorageDirectory(), "README.md"),
-                            File("/sdcard/README.md"),
-                            File("/storage/emulated/0/README.md"),
-                            File("/storage/emulated/0/Download/README.md"),
-                            File("/storage/emulated/0/Documents/README.md")
-                        )
-                        
-                        for (path in alternativePaths) {
-                            checkedPaths.add("External storage: ${path.absolutePath}")
-                            try {
-                                android.util.Log.d("ChatViewModel", "Checking: ${path.absolutePath} (exists: ${path.exists()}, canRead: ${path.canRead()})")
-                                if (path.exists() && path.canRead()) {
-                                    foundFile = path
-                                    android.util.Log.i("ChatViewModel", "✅ Found README.md at: ${foundFile.absolutePath}")
-                                    break
-                                }
-                            } catch (e: SecurityException) {
-                                android.util.Log.w("ChatViewModel", "⚠️ Cannot access ${path.absolutePath}: ${e.message}")
-                            } catch (e: Exception) {
-                                android.util.Log.w("ChatViewModel", "⚠️ Error checking ${path.absolutePath}: ${e.message}")
-                            }
-                        }
-                    }
+                val file = File(filePath)
+                if (!file.exists()) {
+                    android.util.Log.e("ChatViewModel", "❌ File not found: $filePath")
+                    _events.emit(ChatEvent.ShowError("File not found: ${file.name}"))
+                    return@launch
                 }
                 
-                if (foundFile == null) {
-                    android.util.Log.e("ChatViewModel", "❌ README.md not found in any location")
-                    android.util.Log.e("ChatViewModel", "Checked paths:")
-                    checkedPaths.forEach { path ->
-                        android.util.Log.e("ChatViewModel", "  - $path")
-                    }
-                    
-                    val errorMessage = buildString {
-                        appendLine("README.md file not found.")
-                        appendLine()
-                        appendLine("Checked locations:")
-                        checkedPaths.take(5).forEach { appendLine("  • $it") }
-                        appendLine()
-                        appendLine("To fix:")
-                        appendLine("1. Copy README.md to internal storage:")
-                        appendLine("   adb push README.md /sdcard/README.md")
-                        appendLine("   adb shell \"run-as com.example.aiagentchat cp /sdcard/README.md /data/data/com.example.aiagentchat/files/README.md\"")
-                        appendLine()
-                        appendLine("2. Or grant storage permissions and copy to /sdcard/README.md")
-                    }
-                    
-                    // Пробуем создать тестовый файл во внутреннем хранилище для демонстрации
-                    android.util.Log.i("ChatViewModel", "💡 Creating sample README.md in internal storage for testing...")
-                    try {
-                        val sampleContent = """
-# Sample Document for Vector Search
-
-This is a sample document created automatically for testing vector search functionality.
-
-## Features
-
-- Vector embeddings generation
-- Semantic search
-- Document indexing
-
-## Usage
-
-Ask questions about this document to test the vector search feature.
-
-## Example Questions
-
-- What is this document about?
-- What features are mentioned?
-- How does vector search work?
-
-                        """.trimIndent()
-                        
-                        val internalStorageDir = context.filesDir
-                        val sampleFile = File(internalStorageDir, "README.md")
-                        sampleFile.writeText(sampleContent)
-                        
-                        if (sampleFile.exists() && sampleFile.canRead()) {
-                            foundFile = sampleFile
-                            android.util.Log.i("ChatViewModel", "✅ Created sample README.md at: ${foundFile.absolutePath}")
-                            _events.emit(ChatEvent.ShowError("ℹ️ Created sample README.md for testing. You can replace it with your own file."))
-                        } else {
-                            _events.emit(ChatEvent.ShowError(errorMessage))
-                            return@launch
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.e("ChatViewModel", "Failed to create sample file", e)
-                        _events.emit(ChatEvent.ShowError(errorMessage))
-                        return@launch
-                    }
+                if (!file.canRead()) {
+                    android.util.Log.e("ChatViewModel", "❌ Cannot read file: $filePath")
+                    _events.emit(ChatEvent.ShowError("Cannot read file: ${file.name}"))
+                    return@launch
                 }
                 
-                val needsIndexing = textIndexingService.checkIfIndexingNeeded(
-                    foundFile.absolutePath,
-                    "README.md"
-                )
+                val fileName = file.name
+                android.util.Log.i("ChatViewModel", "🚀 Starting indexing of file: $fileName")
+                
+                val needsIndexing = textIndexingService.checkIfIndexingNeeded(filePath, fileName)
                 
                 if (needsIndexing) {
-                    android.util.Log.i("ChatViewModel", "🚀 Starting indexing of README.md")
-                    
                     // Запускаем наблюдение за прогрессом в отдельной корутине
                     val progressJob = viewModelScope.launch {
                         textIndexingService.indexingProgress.collect { progress ->
@@ -686,25 +612,24 @@ Ask questions about this document to test the vector search feature.
                         }
                     }
                     
-                    textIndexingService.indexFile(
-                        foundFile.absolutePath,
-                        "README.md"
-                    ).onSuccess {
-                        progressJob.cancel()
-                        android.util.Log.i("ChatViewModel", "✅ Indexing completed successfully")
-                        _events.emit(ChatEvent.ShowError("✅ Vector indexing completed successfully! You can now ask questions about the document."))
-                    }.onFailure { error ->
-                        progressJob.cancel()
-                        android.util.Log.e("ChatViewModel", "❌ Indexing failed", error)
-                        _events.emit(ChatEvent.ShowError("Indexing failed: ${error.message}"))
-                    }
+                    textIndexingService.indexFile(filePath, fileName)
+                        .onSuccess {
+                            progressJob.cancel()
+                            android.util.Log.i("ChatViewModel", "✅ Indexing completed successfully")
+                            _events.emit(ChatEvent.ShowError("✅ Vector indexing completed successfully! You can now ask questions about the document."))
+                        }.onFailure { error ->
+                            progressJob.cancel()
+                            android.util.Log.e("ChatViewModel", "❌ Indexing failed", error)
+                            _events.emit(ChatEvent.ShowError("Indexing failed: ${error.message}"))
+                        }
                 } else {
                     val index = vectorJsonService.loadVectorIndex()
                     val totalChunks = index.documents.sumOf { it.chunks.size }
                     android.util.Log.i("ChatViewModel", "✅ File already indexed ($totalChunks chunks), ready to use")
+                    _events.emit(ChatEvent.ShowError("ℹ️ File already indexed. Ready to use."))
                 }
             } catch (e: Exception) {
-                android.util.Log.e("ChatViewModel", "Error checking indexing", e)
+                android.util.Log.e("ChatViewModel", "Error indexing file", e)
                 _events.emit(ChatEvent.ShowError("Error: ${e.message}"))
             }
         }

@@ -5,6 +5,7 @@ import com.example.aiagentchat.core.network.ApiClient
 import com.google.gson.annotations.SerializedName
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.GET
 import retrofit2.http.POST
 
 data class OllamaEmbedRequest(
@@ -32,6 +33,9 @@ interface OllamaApi {
     suspend fun generateEmbedding(
         @Body request: OllamaEmbedRequest
     ): Response<OllamaEmbedResponse>
+    
+    @retrofit2.http.GET("api/tags")
+    suspend fun getTags(): Response<OllamaTagsResponse>
 
     companion object {
         const val DEFAULT_BASE_URL = "http://10.0.2.2:11434/"
@@ -46,4 +50,18 @@ interface OllamaApi {
         }
     }
 }
+
+data class OllamaTagsResponse(
+    @SerializedName("models")
+    val models: List<OllamaModel>? = null
+)
+
+data class OllamaModel(
+    @SerializedName("name")
+    val name: String,
+    @SerializedName("modified_at")
+    val modifiedAt: String? = null,
+    @SerializedName("size")
+    val size: Long? = null
+)
 

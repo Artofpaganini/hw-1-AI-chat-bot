@@ -3,6 +3,9 @@ package com.example.aiagentchat.feature.home.presentation
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -121,6 +124,31 @@ fun HomeScreen(
         }
     }
     
+    // Launcher для выбора файла
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            try {
+                val filePath = getFilePathFromUri(context, it)
+                if (filePath != null) {
+                    viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.SelectOllamaFile(filePath))
+                    scope.launch {
+                        snackbarHostState.showSnackbar("File selected: ${java.io.File(filePath).name}")
+                    }
+                } else {
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Could not access file. Please try again.")
+                    }
+                }
+            } catch (e: Exception) {
+                scope.launch {
+                    snackbarHostState.showSnackbar("Error selecting file: ${e.message}")
+                }
+            }
+        }
+    }
+    
     LaunchedEffect(state.messages.size) {
         if (state.messages.isNotEmpty()) {
             listState.animateScrollToItem(state.messages.size - 1)
@@ -206,6 +234,30 @@ fun HomeScreen(
                 viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.SetRemoteControlDeviceId(deviceId))
             },
             ollamaEnabled = state.ollamaEnabled,
+            ollamaSelectedFile = state.ollamaSelectedFile,
+            onOllamaSelectFile = {
+                // Проверяем разрешения перед открытием file picker
+                val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    arrayOf(
+                        Manifest.permission.READ_MEDIA_IMAGES,
+                        Manifest.permission.READ_MEDIA_VIDEO,
+                        Manifest.permission.READ_MEDIA_AUDIO
+                    )
+                } else {
+                    arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+                }
+                
+                val hasAllPermissions = permissions.all { permission ->
+                    ContextCompat.checkSelfPermission(context, permission) == 
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                }
+                
+                if (hasAllPermissions) {
+                    filePickerLauncher.launch("*/*")
+                } else {
+                    storagePermissionLauncher.launch(permissions)
+                }
+            },
             onOllamaToggle = { enabled ->
                 if (enabled) {
                     // Проверяем разрешения на чтение файлов
@@ -891,4 +943,37 @@ private fun JsonExportDialog(
             }
         }
     }
+}
+
+// Функция для получения пути к файлу из URI
+private fun getFilePathFromUri(context: Context, uri: Uri): String? {
+    var result: String? = null
+    if (uri.scheme == "content") {
+        val cursor = context.contentResolver.query(uri, null, null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val index = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0) {
+                    val fileName = it.getString(index)
+                    // Копируем файл во временное хранилище приложения
+                    try {
+                        val inputStream = context.contentResolver.openInputStream(uri)
+                        val filesDir = context.filesDir
+                        val tempFile = java.io.File(filesDir, fileName)
+                        inputStream?.use { stream ->
+                            tempFile.outputStream().use { output ->
+                                stream.copyTo(output)
+                            }
+                        }
+                        result = tempFile.absolutePath
+                    } catch (e: Exception) {
+                        Log.e("HomeScreen", "Error copying file", e)
+                    }
+                }
+            }
+        }
+    } else if (uri.scheme == "file") {
+        result = uri.path
+    }
+    return result
 }

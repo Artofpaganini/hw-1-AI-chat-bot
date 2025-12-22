@@ -4,7 +4,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,6 +26,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.Button
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +57,8 @@ fun ToolsDialog(
     onRemoteControlDeviceIdChange: (String?) -> Unit = {},
     ollamaEnabled: Boolean = false,
     onOllamaToggle: (Boolean) -> Unit = {},
+    ollamaSelectedFile: String? = null,
+    onOllamaSelectFile: () -> Unit = {},
     mcpServers: List<McpServer> = emptyList(),
     enabledMcpServerTools: Map<String, Set<String>> = emptyMap(),
     onServerToolToggle: (String, String, Boolean) -> Unit = { _, _, _ -> }
@@ -136,7 +141,9 @@ fun ToolsDialog(
                         )
                         OllamaItem(
                             enabled = ollamaEnabled,
-                            onToggle = onOllamaToggle
+                            onToggle = onOllamaToggle,
+                            selectedFile = ollamaSelectedFile,
+                            onSelectFile = onOllamaSelectFile
                         )
                         if (mcpServers.isNotEmpty()) {
                             HorizontalDivider(
@@ -334,7 +341,9 @@ private fun TestModeItem(
 @Composable
 private fun OllamaItem(
     enabled: Boolean,
-    onToggle: (Boolean) -> Unit
+    onToggle: (Boolean) -> Unit,
+    selectedFile: String? = null,
+    onSelectFile: () -> Unit = {}
 ) {
     Surface(
         shape = MaterialTheme.shapes.medium,
@@ -361,7 +370,7 @@ private fun OllamaItem(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Enable vector search using Ollama embeddings. Indexes README.md for semantic search in chat.",
+                        text = "Enable vector search using Ollama embeddings. Attach a file (.md/.txt/.pdf) for indexing.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp)
@@ -371,6 +380,46 @@ private fun OllamaItem(
                     checked = enabled,
                     onCheckedChange = onToggle
                 )
+            }
+            
+            if (enabled) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 12.dp),
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                )
+                
+                Column {
+                    Text(
+                        text = "Document File",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    Text(
+                        text = "Select a file (.md, .txt, or .pdf) to index for vector search.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    
+                    androidx.compose.material3.Button(
+                        onClick = onSelectFile,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (selectedFile != null) "Change File" else "Select File")
+                    }
+                    
+                    selectedFile?.let { filePath ->
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Selected: ${java.io.File(filePath).name}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
             }
         }
     }
