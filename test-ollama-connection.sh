@@ -72,3 +72,4 @@ echo "   - Endpoint: /api/embed"
 echo ""
 echo "✅ Ready to use Ollama in the app!"
 
+

@@ -37,3 +37,4 @@ class WeatherWorkerFactory : WorkerFactory(), KoinComponent {
     }
 }
 
+

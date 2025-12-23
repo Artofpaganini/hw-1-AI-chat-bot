@@ -18,6 +18,7 @@ import com.example.aiagentchat.feature.chat.domain.usecase.CompressionScheduler
 import com.example.aiagentchat.feature.chat.domain.usecase.ContextInitializer
 import com.example.aiagentchat.feature.chat.domain.usecase.ExportChatHistoryUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.SendMessageUseCase
+import com.example.aiagentchat.feature.chat.domain.usecase.SendRagMessageUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.SwitchAiModelUseCase
 import com.example.aiagentchat.feature.chat.data.api.ChatMessageDto
 import com.example.aiagentchat.feature.chat.data.service.TextIndexingService
@@ -41,6 +42,7 @@ import kotlinx.coroutines.Job
 
 class ChatViewModel(
     private val sendMessageUseCase: SendMessageUseCase,
+    private val sendRagMessageUseCase: SendRagMessageUseCase,
     private val switchAiModelUseCase: SwitchAiModelUseCase,
     private val compareModelMetricsUseCase: CompareModelMetricsUseCase,
     private val exportChatHistoryUseCase: ExportChatHistoryUseCase,
@@ -190,44 +192,152 @@ class ChatViewModel(
                 )
             }
 
-            val messagesWithContext = buildMessagesWithContext(currentInput)
-
-            // Передаем MCP tools только если они включены и Ollama не включен
             val ollamaEnabled = _uiState.value.ollamaEnabled
-            val enabledMcpTools = if (ollamaEnabled) emptySet() else _uiState.value.enabledMcpTools
-            val enabledMcpServerTools = if (ollamaEnabled) emptyMap() else _uiState.value.enabledMcpServerTools
             
-            android.util.Log.d("ChatViewModel", "Sending message - Ollama: $ollamaEnabled, MCP tools: ${enabledMcpTools.size}, MCP servers: ${enabledMcpServerTools.size}")
-            
-            sendMessageUseCase(
-                model = _uiState.value.selectedModel,
-                messages = messagesWithContext,
-                enabledMcpTools = enabledMcpTools,
-                enabledMcpServerTools = enabledMcpServerTools,
-                remoteControlDeviceId = if (_uiState.value.remoteControlEnabled && !ollamaEnabled) _uiState.value.remoteControlDeviceId else null
-            )
-                .onSuccess { aiMessage ->
-                    chatRepository.saveMessage(aiMessage)
-                    handleCheckMessageThreshold(aiMessage)
-                    val updatedMessages = _uiState.value.messages + userMessage + aiMessage
-                    val comparison = compareModelMetricsUseCase(updatedMessages, currentInput)
-                    _uiState.update { state ->
-                        state.copy(
-                            isLoading = false,
-                            metricsComparison = comparison
-                        )
-                    }
-                }
-                .onFailure { error ->
-                    _uiState.update { state ->
-                        state.copy(
-                            isLoading = false,
-                            error = error.message ?: "Unknown error occurred"
-                        )
-                    }
-                    _events.emit(ChatEvent.ShowError(error.message ?: "Unknown error occurred"))
-                }
+            if (ollamaEnabled) {
+                handleSendMessageWithOllama(currentInput, userMessage)
+            } else {
+                handleSendMessageWithoutOllama(currentInput, userMessage)
+            }
         }
+    }
+
+    private suspend fun handleSendMessageWithOllama(currentInput: String, userMessage: Message) {
+        try {
+            val index = vectorJsonService.loadVectorIndex()
+            val hasVectors = index.documents.isNotEmpty()
+            
+            if (!hasVectors) {
+                val errorMsg = "No indexed documents found. Please index a file first."
+                android.util.Log.w("ChatViewModel", errorMsg)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = errorMsg
+                    )
+                }
+                _events.emit(ChatEvent.ShowError(errorMsg))
+                return
+            }
+            
+            val queryEmbedding = generateQueryEmbedding(currentInput)
+            val matchedChunks = findSimilarVectorsInJson(queryEmbedding, index, limit = 3)
+            
+            if (matchedChunks.isEmpty()) {
+                val errorMsg = "No relevant chunks found for the query."
+                android.util.Log.w("ChatViewModel", errorMsg)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = errorMsg
+                    )
+                }
+                _events.emit(ChatEvent.ShowError(errorMsg))
+                return
+            }
+            
+            vectorJsonService.updateQuery(currentInput, queryEmbedding, matchedChunks)
+            
+            android.util.Log.d("ChatViewModel", "Using RAG with Ollama, ${matchedChunks.size} matched chunks")
+            
+            val ragResult = sendRagMessageUseCase(
+                query = currentInput,
+                queryEmbedding = queryEmbedding,
+                matchedChunks = matchedChunks,
+                chatModel = OllamaApi.DEFAULT_CHAT_MODEL
+            )
+            
+            ragResult.onSuccess { ragResponse ->
+                val chunkInfoText = buildString {
+                    appendLine()
+                    appendLine("---")
+                    appendLine("📚 Источники (chunks):")
+                    ragResponse.matchedChunks.forEach { chunkInfo ->
+                        appendLine("  • Chunk #${chunkInfo.chunkIndex}: ${chunkInfo.summary}")
+                    }
+                    appendLine("---")
+                }
+                
+                val fullContent = ragResponse.content + chunkInfoText
+                
+                val aiMessage = Message(
+                    content = fullContent,
+                    isUser = false,
+                    model = null,
+                    metrics = null
+                )
+                
+                chatRepository.saveMessage(aiMessage)
+                handleCheckMessageThreshold(aiMessage)
+                val updatedMessages = _uiState.value.messages + userMessage + aiMessage
+                val comparison = compareModelMetricsUseCase(updatedMessages, currentInput)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        metricsComparison = comparison
+                    )
+                }
+            }.onFailure { error ->
+                android.util.Log.e("ChatViewModel", "RAG error", error)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = error.message ?: "Unknown error occurred"
+                    )
+                }
+                _events.emit(ChatEvent.ShowError(error.message ?: "Unknown error occurred"))
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "Error in handleSendMessageWithOllama", e)
+            _uiState.update { state ->
+                state.copy(
+                    isLoading = false,
+                    error = e.message ?: "Unknown error occurred"
+                )
+            }
+            _events.emit(ChatEvent.ShowError(e.message ?: "Unknown error occurred"))
+        }
+    }
+
+    private suspend fun handleSendMessageWithoutOllama(currentInput: String, userMessage: Message) {
+        val messagesWithContext = buildMessagesWithContext(currentInput)
+        
+        val enabledMcpTools = _uiState.value.enabledMcpTools
+        val enabledMcpServerTools = _uiState.value.enabledMcpServerTools
+        
+        android.util.Log.d("ChatViewModel", "Sending message without Ollama, MCP tools: ${enabledMcpTools.size}, MCP servers: ${enabledMcpServerTools.size}")
+        
+        sendMessageUseCase(
+            model = _uiState.value.selectedModel,
+            messages = messagesWithContext,
+            enabledMcpTools = enabledMcpTools,
+            enabledMcpServerTools = enabledMcpServerTools,
+            remoteControlDeviceId = if (_uiState.value.remoteControlEnabled) _uiState.value.remoteControlDeviceId else null
+        )
+            .onSuccess { aiMessage ->
+                val contentWithMarker = aiMessage.content + "\n\n---\nБез Ollama"
+                val modifiedMessage = aiMessage.copy(content = contentWithMarker)
+                
+                chatRepository.saveMessage(modifiedMessage)
+                handleCheckMessageThreshold(modifiedMessage)
+                val updatedMessages = _uiState.value.messages + userMessage + modifiedMessage
+                val comparison = compareModelMetricsUseCase(updatedMessages, currentInput)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        metricsComparison = comparison
+                    )
+                }
+            }
+            .onFailure { error ->
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = error.message ?: "Unknown error occurred"
+                    )
+                }
+                _events.emit(ChatEvent.ShowError(error.message ?: "Unknown error occurred"))
+            }
     }
 
     private fun handleModelSelected(model: AiModel) {

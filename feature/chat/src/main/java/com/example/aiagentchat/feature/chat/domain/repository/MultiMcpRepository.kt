@@ -11,3 +11,4 @@ interface MultiMcpRepository {
     fun observeServers(): Flow<List<McpServer>>
 }
 
+

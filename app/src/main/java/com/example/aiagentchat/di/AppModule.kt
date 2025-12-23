@@ -26,6 +26,7 @@ import com.example.aiagentchat.feature.chat.domain.usecase.ContextInitializer
 import com.example.aiagentchat.feature.chat.domain.usecase.ExportChatHistoryUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.FallbackSummarizer
 import com.example.aiagentchat.feature.chat.domain.usecase.SendMessageUseCase
+import com.example.aiagentchat.feature.chat.domain.usecase.SendRagMessageUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.SwitchAiModelUseCase
 import com.example.aiagentchat.feature.chat.presentation.chat.ChatViewModel
 import org.koin.android.ext.koin.androidContext
@@ -101,6 +102,7 @@ val appModule = module {
     }
 
     factory { SendMessageUseCase(get(), get(), get(), get(), get<com.example.aiagentchat.core.common.preferences.PreferencesManager>(), get<Gson>()) }
+    factory { SendRagMessageUseCase(get(), get()) }
     factory { SwitchAiModelUseCase(get()) }
     factory { CompareModelMetricsUseCase() }
     factory { ExportChatHistoryUseCase() }
@@ -163,6 +165,7 @@ val appModule = module {
     viewModel {
         ChatViewModel(
             sendMessageUseCase = get(),
+            sendRagMessageUseCase = get(),
             switchAiModelUseCase = get(),
             compareModelMetricsUseCase = get(),
             exportChatHistoryUseCase = get(),
