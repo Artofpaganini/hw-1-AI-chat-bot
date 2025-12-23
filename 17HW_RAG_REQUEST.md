@@ -27,21 +27,17 @@
 - Добавлен endpoint `generateChat()` для генерации ответов через Ollama
 - Добавлена константа `DEFAULT_CHAT_MODEL = "llama3.2"` для модели генерации
 
-### 2. Создан Use Case для RAG
+### 2. Модифицирована логика обработки сообщений
 
-**Файл:** `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/domain/usecase/SendRagMessageUseCase.kt`
+**Файл:** `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/chat/ChatViewModel.kt`
 
-- Реализован `SendRagMessageUseCase` для обработки RAG запросов
+- Модифицирован метод `handleSendMessageWithOllama()` для работы с AI chat
 - Функционал:
-  - Принимает запрос пользователя, embedding запроса и найденные chunks
-  - Формирует промпт с контекстом из chunks
-  - Отправляет запрос в Ollama Chat API
-  - Генерирует summary для каждого chunk'а
-  - Возвращает ответ с информацией о chunks
-
-**Модели данных:**
-- `RagResponse` - ответ с содержимым и информацией о chunks
-- `ChunkInfo` - информация о chunk'е (номер, summary, текст)
+  - Выполняет векторный поиск через Ollama (`nomic-embed-text`)
+  - Находит релевантные chunks
+  - Формирует промпт с контекстом и инструкцией для AI chat
+  - Отправляет запрос в AI chat (через `SendMessageUseCase`)
+  - AI chat сам формирует ответ и summary для chunks
 
 ### 3. Модифицирован ChatViewModel
 
@@ -72,25 +68,26 @@
 
 1. Пользователь отправляет вопрос в AI chat
 2. AI chat проверяет, что Ollama включен (`ollamaEnabled = true`)
-3. Выполняется векторный поиск:
+3. Выполняется векторный поиск через Ollama:
    - Вопрос конвертируется в embedding через Ollama (`nomic-embed-text`)
    - Выполняется поиск похожих векторов (cosine similarity) в индексированных документах
    - Находятся топ-3 наиболее релевантных chunks
-4. Формируется промпт с контекстом:
-   - Контекст из найденных chunks
+4. Формируется промпт с контекстом для AI chat:
+   - Контекст из найденных chunks (с номерами)
    - Вопрос пользователя
-5. Запрос отправляется в Ollama Chat API (модель `llama3.2`)
-6. Ollama генерирует ответ на основе контекста
-7. Для каждого chunk'а генерируется краткое summary
+   - Инструкция для AI chat сформировать ответ и summary для каждого chunk'а
+5. Запрос отправляется в AI chat (выбранная модель: DeepSeek, Claude, GPT, Gemini)
+6. AI chat генерирует ответ на основе контекста из chunks
+7. AI chat сам формирует summary для каждого chunk'а на основе контекста
 8. Формируется финальный ответ:
    ```
-   [Ответ от Ollama]
+   [Ответ от AI chat на основе контекста из chunks]
    
    ---
    📚 Источники (chunks):
-     • Chunk #0: [summary chunk'а 0]
-     • Chunk #1: [summary chunk'а 1]
-     • Chunk #2: [summary chunk'а 2]
+     • Chunk #0: [summary chunk'а 0, сформированное AI chat]
+     • Chunk #1: [summary chunk'а 1, сформированное AI chat]
+     • Chunk #2: [summary chunk'а 2, сформированное AI chat]
    ---
    ```
 
@@ -206,13 +203,14 @@ adb logcat | grep -E "ChatViewModel|SendRagMessageUseCase|OllamaApi"
 2. Проверьте, что файл был правильно проиндексирован
 3. Проверьте JSON Export для просмотра индексированных данных
 
-### Проблема: "Failed to generate chat response"
+### Проблема: "Failed to generate response from AI chat"
 
 **Решение:**
-1. Проверьте, что Ollama сервер запущен: `curl http://localhost:11434/api/tags`
-2. Проверьте, что модель `llama3.2` установлена: `ollama list | grep llama3.2`
-3. Если модель не установлена: `ollama pull llama3.2`
+1. Проверьте, что Ollama сервер запущен для векторного поиска: `curl http://localhost:11434/api/tags`
+2. Проверьте, что модель `nomic-embed-text` установлена: `ollama list | grep nomic-embed-text`
+3. Если модель не установлена: `ollama pull nomic-embed-text`
 4. Проверьте подключение из эмулятора: `adb shell curl http://10.0.2.2:11434/api/tags`
+5. Проверьте, что API ключи для AI моделей настроены в `local.properties`
 
 ### Проблема: Ответ не содержит информацию о chunks
 
@@ -230,10 +228,10 @@ adb logcat | grep -E "ChatViewModel|SendRagMessageUseCase|OllamaApi"
 
 ## Технические детали
 
-### Используемые модели Ollama
+### Используемые модели
 
-- **Для embeddings:** `nomic-embed-text` (по умолчанию)
-- **Для генерации ответов:** `llama3.2` (по умолчанию)
+- **Ollama для embeddings:** `nomic-embed-text` (по умолчанию) - используется только для векторного поиска
+- **AI Chat для генерации ответов:** выбранная модель пользователя (DeepSeek, Claude 3.5 Sonnet, GPT-4o Mini, Gemini Pro 1.5) - формирует ответ и summary
 
 ### Параметры векторного поиска
 
@@ -265,18 +263,20 @@ adb logcat | grep -E "ChatViewModel|SendRagMessageUseCase|OllamaApi"
 
 ## Файлы, которые были изменены/созданы
 
-1. `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/data/api/OllamaApi.kt` - добавлен Chat API
-2. `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/domain/usecase/SendRagMessageUseCase.kt` - новый use case
-3. `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/chat/ChatViewModel.kt` - модифицирован для RAG
-4. `app/src/main/java/com/example/aiagentchat/di/AppModule.kt` - добавлен use case в DI
-5. `README.md` - обновлена документация
-6. `17HW_RAG_REQUEST.md` - этот файл с описанием реализации
+1. `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/chat/ChatViewModel.kt` - модифицирован для RAG с использованием AI chat
+2. `app/src/main/java/com/example/aiagentchat/di/AppModule.kt` - обновлен DI (удален SendRagMessageUseCase)
+3. `README.md` - обновлена документация
+4. `17HW_RAG_REQUEST.md` - этот файл с описанием реализации
+
+**Примечание:** Ollama Chat API не используется. Ollama применяется только для генерации embeddings через `nomic-embed-text`.
 
 ## Заключение
 
 Реализован полноценный RAG функционал с поддержкой двух сценариев работы:
-- С Ollama для генерации ответов на основе проиндексированных документов
-- Без Ollama с обычной генерацией ответов
+- **С Ollama включенным:** Ollama используется только для векторного поиска (embeddings через `nomic-embed-text`), ответ и summary формирует AI chat на основе найденных chunks
+- **Без Ollama:** обычная генерация ответов через AI chat с добавлением фразы "Без Ollama"
+
+**Ключевая особенность:** Ollama используется исключительно для векторного поиска, а генерация ответов и summary выполняется AI chat моделями (DeepSeek, Claude, GPT, Gemini).
 
 Функционал протестирован, компиляция проходит успешно, все зависимости корректно настроены.
 

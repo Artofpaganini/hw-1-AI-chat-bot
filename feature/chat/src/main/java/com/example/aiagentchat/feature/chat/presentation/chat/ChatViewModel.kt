@@ -18,7 +18,6 @@ import com.example.aiagentchat.feature.chat.domain.usecase.CompressionScheduler
 import com.example.aiagentchat.feature.chat.domain.usecase.ContextInitializer
 import com.example.aiagentchat.feature.chat.domain.usecase.ExportChatHistoryUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.SendMessageUseCase
-import com.example.aiagentchat.feature.chat.domain.usecase.SendRagMessageUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.SwitchAiModelUseCase
 import com.example.aiagentchat.feature.chat.data.api.ChatMessageDto
 import com.example.aiagentchat.feature.chat.data.service.TextIndexingService
@@ -42,7 +41,6 @@ import kotlinx.coroutines.Job
 
 class ChatViewModel(
     private val sendMessageUseCase: SendMessageUseCase,
-    private val sendRagMessageUseCase: SendRagMessageUseCase,
     private val switchAiModelUseCase: SwitchAiModelUseCase,
     private val compareModelMetricsUseCase: CompareModelMetricsUseCase,
     private val exportChatHistoryUseCase: ExportChatHistoryUseCase,
@@ -238,55 +236,73 @@ class ChatViewModel(
             
             vectorJsonService.updateQuery(currentInput, queryEmbedding, matchedChunks)
             
-            android.util.Log.d("ChatViewModel", "Using RAG with Ollama, ${matchedChunks.size} matched chunks")
+            android.util.Log.d("ChatViewModel", "Using RAG with Ollama (vector search), ${matchedChunks.size} matched chunks")
             
-            val ragResult = sendRagMessageUseCase(
-                query = currentInput,
-                queryEmbedding = queryEmbedding,
-                matchedChunks = matchedChunks,
-                chatModel = OllamaApi.DEFAULT_CHAT_MODEL
+            val contextText = matchedChunks.joinToString("\n\n---\n\n") { chunk ->
+                "Chunk #${chunk.chunkIndex}:\n${chunk.text}"
+            }
+            
+            val enhancedPrompt = buildString {
+                appendLine("Based on the following context from indexed documents, please answer the user's question.")
+                appendLine()
+                appendLine("=== RELEVANT CONTEXT ===")
+                appendLine(contextText)
+                appendLine("=== END OF CONTEXT ===")
+                appendLine()
+                appendLine("=== USER QUESTION ===")
+                appendLine(currentInput)
+                appendLine("=== END OF QUESTION ===")
+                appendLine()
+                appendLine("IMPORTANT: After your answer, please provide:")
+                appendLine("1. A list of chunk numbers that were used to answer the question")
+                appendLine("2. A brief summary (1-2 sentences) for each chunk about what information it contained")
+                appendLine()
+                appendLine("Format your response as follows:")
+                appendLine("[Your answer to the question]")
+                appendLine()
+                appendLine("---")
+                appendLine("📚 Источники (chunks):")
+                appendLine("  • Chunk #N: [brief summary]")
+                appendLine("  • Chunk #M: [brief summary]")
+                appendLine("---")
+            }
+            
+            val messagesWithContext = listOf(
+                ChatMessageDto(role = "user", content = enhancedPrompt)
             )
             
-            ragResult.onSuccess { ragResponse ->
-                val chunkInfoText = buildString {
-                    appendLine()
-                    appendLine("---")
-                    appendLine("📚 Источники (chunks):")
-                    ragResponse.matchedChunks.forEach { chunkInfo ->
-                        appendLine("  • Chunk #${chunkInfo.chunkIndex}: ${chunkInfo.summary}")
+            val enabledMcpTools = emptySet<String>()
+            val enabledMcpServerTools = emptyMap<String, Set<String>>()
+            
+            sendMessageUseCase(
+                model = _uiState.value.selectedModel,
+                messages = messagesWithContext,
+                enabledMcpTools = enabledMcpTools,
+                enabledMcpServerTools = enabledMcpServerTools,
+                remoteControlDeviceId = null
+            )
+                .onSuccess { aiMessage ->
+                    chatRepository.saveMessage(aiMessage)
+                    handleCheckMessageThreshold(aiMessage)
+                    val updatedMessages = _uiState.value.messages + userMessage + aiMessage
+                    val comparison = compareModelMetricsUseCase(updatedMessages, currentInput)
+                    _uiState.update { state ->
+                        state.copy(
+                            isLoading = false,
+                            metricsComparison = comparison
+                        )
                     }
-                    appendLine("---")
                 }
-                
-                val fullContent = ragResponse.content + chunkInfoText
-                
-                val aiMessage = Message(
-                    content = fullContent,
-                    isUser = false,
-                    model = null,
-                    metrics = null
-                )
-                
-                chatRepository.saveMessage(aiMessage)
-                handleCheckMessageThreshold(aiMessage)
-                val updatedMessages = _uiState.value.messages + userMessage + aiMessage
-                val comparison = compareModelMetricsUseCase(updatedMessages, currentInput)
-                _uiState.update { state ->
-                    state.copy(
-                        isLoading = false,
-                        metricsComparison = comparison
-                    )
+                .onFailure { error ->
+                    android.util.Log.e("ChatViewModel", "Error sending message with Ollama context", error)
+                    _uiState.update { state ->
+                        state.copy(
+                            isLoading = false,
+                            error = error.message ?: "Unknown error occurred"
+                        )
+                    }
+                    _events.emit(ChatEvent.ShowError(error.message ?: "Unknown error occurred"))
                 }
-            }.onFailure { error ->
-                android.util.Log.e("ChatViewModel", "RAG error", error)
-                _uiState.update { state ->
-                    state.copy(
-                        isLoading = false,
-                        error = error.message ?: "Unknown error occurred"
-                    )
-                }
-                _events.emit(ChatEvent.ShowError(error.message ?: "Unknown error occurred"))
-            }
         } catch (e: Exception) {
             android.util.Log.e("ChatViewModel", "Error in handleSendMessageWithOllama", e)
             _uiState.update { state ->
