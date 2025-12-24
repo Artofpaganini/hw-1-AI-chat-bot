@@ -283,6 +283,14 @@ fun HomeScreen(
                 }
                 viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleOllama(enabled))
             },
+            rerankingEnabled = state.rerankingEnabled,
+            onRerankingToggle = { enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleReranking(enabled))
+            },
+            rerankingSimilarityThreshold = state.rerankingSimilarityThreshold,
+            onRerankingThresholdChange = { threshold ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.SetRerankingSimilarityThreshold(threshold))
+            },
             mcpServers = state.mcpServers,
             enabledMcpServerTools = state.enabledMcpServerTools,
             onServerToolToggle = { serverId, toolName, enabled ->

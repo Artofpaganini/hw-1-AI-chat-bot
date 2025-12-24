@@ -65,7 +65,15 @@ class TextIndexingService(
                     // Для PDF нужна специальная библиотека, пока возвращаем ошибку
                     return Result.failure(Exception("PDF support is not yet implemented. Please use .md or .txt files."))
                 }
-                else -> file.readText()
+                else -> {
+                    val content = file.readText(Charsets.UTF_8)
+                    Log.d(TAG, "Read file content: ${content.length} characters")
+                    if (content.isBlank()) {
+                        Log.w(TAG, "File content is empty or blank")
+                        return Result.failure(Exception("File is empty or contains only whitespace"))
+                    }
+                    content
+                }
             }
             val fileHash = calculateFileHash(fileContent)
 
@@ -86,6 +94,13 @@ class TextIndexingService(
             val chunks = splitIntoChunks(fileContent)
             Log.i(TAG, "📄 File: $fileName")
             Log.i(TAG, "📊 Split into ${chunks.size} chunks")
+            
+            if (chunks.isEmpty()) {
+                val errorMsg = "File content could not be split into chunks. File may be empty or contain only whitespace."
+                Log.e(TAG, errorMsg)
+                return Result.failure(Exception(errorMsg))
+            }
+            
             Log.i(TAG, "🚀 Starting vector indexing...")
 
             val vectorChunks = mutableListOf<VectorChunk>()
@@ -172,16 +187,33 @@ class TextIndexingService(
 
     private fun splitIntoChunks(text: String): List<TextChunk> {
         val chunks = mutableListOf<TextChunk>()
+        
+        // Проверяем, что текст не пустой
+        if (text.isBlank()) {
+            Log.w(TAG, "Text is blank, returning empty chunks list")
+            return emptyList()
+        }
+        
+        Log.i(TAG, "Splitting text into chunks:")
+        Log.i(TAG, "  Text length: ${text.length} characters")
+        
         // Используем целевой размер (600 токенов) для оптимального баланса
         val targetCharsPerChunk = (TARGET_CHUNK_SIZE_TOKENS / TOKENS_PER_CHAR).toInt() // ~3000 символов для 600 токенов
         val overlapChars = (TARGET_OVERLAP_TOKENS / TOKENS_PER_CHAR).toInt() // ~300 символов для 60 токенов
         
-        Log.i(TAG, "Splitting text into chunks:")
         Log.i(TAG, "  Target chunk size: $TARGET_CHUNK_SIZE_TOKENS tokens (~$targetCharsPerChunk chars)")
         Log.i(TAG, "  Overlap: $TARGET_OVERLAP_TOKENS tokens (~$overlapChars chars)")
         Log.i(TAG, "  Range: $MIN_CHUNK_SIZE_TOKENS-$MAX_CHUNK_SIZE_TOKENS tokens")
         Log.i(TAG, "  Overlap range: $MIN_OVERLAP_TOKENS-$MAX_OVERLAP_TOKENS tokens")
         Log.i(TAG, "  Max chunk chars (with safety margin): $MAX_CHUNK_CHARS")
+        
+        // Если текст короче целевого размера чанка, создаем один чанк
+        if (text.length <= targetCharsPerChunk) {
+            val estimatedTokens = estimateTokenCount(text)
+            Log.i(TAG, "Text is shorter than target chunk size, creating single chunk: ${text.length} chars, ~$estimatedTokens tokens")
+            chunks.add(TextChunk(text = text.trim(), index = 0))
+            return chunks
+        }
 
         var startIndex = 0
         var chunkIndex = 0
@@ -206,7 +238,15 @@ class TextIndexingService(
                 endIndex = startIndex + newSize
             }
             
-            val finalChunkText = text.substring(startIndex, endIndex)
+            val finalChunkText = text.substring(startIndex, endIndex).trim()
+            
+            // Пропускаем пустые чанки
+            if (finalChunkText.isBlank()) {
+                Log.w(TAG, "Chunk $chunkIndex is blank, skipping")
+                startIndex = endIndex
+                continue
+            }
+            
             val finalEstimatedTokens = estimateTokenCount(finalChunkText)
             
             Log.d(TAG, "Chunk $chunkIndex: ${finalChunkText.length} chars, ~$finalEstimatedTokens tokens")

@@ -29,7 +29,9 @@ data class ChatUiState(
     val remoteControlDeviceId: String? = null,
     val ollamaEnabled: Boolean = false,
     val exportedJson: String? = null,
-    val ollamaSelectedFile: String? = null // Путь к выбранному файлу для индексации
+    val ollamaSelectedFile: String? = null, // Путь к выбранному файлу для индексации
+    val rerankingEnabled: Boolean = false,
+    val rerankingSimilarityThreshold: Int = 50 // Коэффициент похожести в процентах (0-100)
 )
 
 sealed interface ChatAction {
@@ -51,6 +53,8 @@ sealed interface ChatAction {
     data class SetRemoteControlDeviceId(val deviceId: String?) : ChatAction
     data class ToggleOllama(val enabled: Boolean) : ChatAction
     data class SelectOllamaFile(val filePath: String?) : ChatAction
+    data class ToggleReranking(val enabled: Boolean) : ChatAction
+    data class SetRerankingSimilarityThreshold(val threshold: Int) : ChatAction
     data object ExportJson : ChatAction
     data object DismissJsonExport : ChatAction
 }

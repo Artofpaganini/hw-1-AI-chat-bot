@@ -29,6 +29,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Button
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,6 +60,10 @@ fun ToolsDialog(
     onOllamaToggle: (Boolean) -> Unit = {},
     ollamaSelectedFile: String? = null,
     onOllamaSelectFile: () -> Unit = {},
+    rerankingEnabled: Boolean = false,
+    onRerankingToggle: (Boolean) -> Unit = {},
+    rerankingSimilarityThreshold: Int = 50,
+    onRerankingThresholdChange: (Int) -> Unit = {},
     mcpServers: List<McpServer> = emptyList(),
     enabledMcpServerTools: Map<String, Set<String>> = emptyMap(),
     onServerToolToggle: (String, String, Boolean) -> Unit = { _, _, _ -> }
@@ -143,7 +148,11 @@ fun ToolsDialog(
                             enabled = ollamaEnabled,
                             onToggle = onOllamaToggle,
                             selectedFile = ollamaSelectedFile,
-                            onSelectFile = onOllamaSelectFile
+                            onSelectFile = onOllamaSelectFile,
+                            rerankingEnabled = rerankingEnabled,
+                            onRerankingToggle = onRerankingToggle,
+                            rerankingSimilarityThreshold = rerankingSimilarityThreshold,
+                            onRerankingThresholdChange = onRerankingThresholdChange
                         )
                         if (mcpServers.isNotEmpty()) {
                             HorizontalDivider(
@@ -343,7 +352,11 @@ private fun OllamaItem(
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
     selectedFile: String? = null,
-    onSelectFile: () -> Unit = {}
+    onSelectFile: () -> Unit = {},
+    rerankingEnabled: Boolean = false,
+    onRerankingToggle: (Boolean) -> Unit = {},
+    rerankingSimilarityThreshold: Int = 50,
+    onRerankingThresholdChange: (Int) -> Unit = {}
 ) {
     Surface(
         shape = MaterialTheme.shapes.medium,
@@ -417,6 +430,84 @@ private fun OllamaItem(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 12.dp),
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                )
+                
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = "Reranking (Filtering)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                            Text(
+                                text = "Filter chunks by similarity threshold. When enabled, only chunks with similarity above the threshold will be used.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = rerankingEnabled,
+                            onCheckedChange = onRerankingToggle
+                        )
+                    }
+                    
+                    if (rerankingEnabled) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Similarity Threshold (%)",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        Text(
+                            text = "Chunks with similarity below this threshold will be filtered out. Range: 0-100 (default: 50).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        var thresholdText by remember(rerankingSimilarityThreshold) { 
+                            mutableStateOf(rerankingSimilarityThreshold.toString()) 
+                        }
+                        
+                        LaunchedEffect(rerankingSimilarityThreshold) {
+                            thresholdText = rerankingSimilarityThreshold.toString()
+                        }
+                        
+                        OutlinedTextField(
+                            value = thresholdText,
+                            onValueChange = { newValue ->
+                                if (newValue.isEmpty() || newValue.all { it.isDigit() }) {
+                                    thresholdText = newValue
+                                    val value = newValue.toIntOrNull()
+                                    if (value != null && value in 0..100) {
+                                        onRerankingThresholdChange(value)
+                                    }
+                                }
+                            },
+                            label = { Text("Threshold (0-100)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = TextFieldDefaults.colors(
+                                focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+                                unfocusedIndicatorColor = MaterialTheme.colorScheme.outline
+                            )
                         )
                     }
                 }

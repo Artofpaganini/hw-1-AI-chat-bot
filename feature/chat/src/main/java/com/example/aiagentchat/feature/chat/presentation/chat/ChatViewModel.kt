@@ -80,6 +80,7 @@ class ChatViewModel(
         loadRemoteControlState()
         loadRemoteControlDeviceId()
         loadOllamaState()
+        loadRerankingState()
     }
 
     fun onAction(action: ChatAction) {
@@ -102,6 +103,8 @@ class ChatViewModel(
             is ChatAction.SetRemoteControlDeviceId -> handleSetRemoteControlDeviceId(action.deviceId)
             is ChatAction.ToggleOllama -> handleToggleOllama(action.enabled)
             is ChatAction.SelectOllamaFile -> handleSelectOllamaFile(action.filePath)
+            is ChatAction.ToggleReranking -> handleToggleReranking(action.enabled)
+            is ChatAction.SetRerankingSimilarityThreshold -> handleSetRerankingSimilarityThreshold(action.threshold)
             is ChatAction.ExportJson -> handleExportJson()
             is ChatAction.DismissJsonExport -> handleDismissJsonExport()
         }
@@ -203,10 +206,40 @@ class ChatViewModel(
     private suspend fun handleSendMessageWithOllama(currentInput: String, userMessage: Message) {
         try {
             val index = vectorJsonService.loadVectorIndex()
-            val hasVectors = index.documents.isNotEmpty()
+            val selectedFilePath = _uiState.value.ollamaSelectedFile
+            val selectedFileName = selectedFilePath?.let { 
+                val fileName = java.io.File(it).name
+                android.util.Log.d("ChatViewModel", "Extracted file name from path '$it': '$fileName'")
+                fileName
+            }
             
-            if (!hasVectors) {
-                val errorMsg = "No indexed documents found. Please index a file first."
+            android.util.Log.d("ChatViewModel", "Selected file path: $selectedFilePath")
+            android.util.Log.d("ChatViewModel", "Selected file name: $selectedFileName")
+            android.util.Log.d("ChatViewModel", "Total documents in index: ${index.documents.size}")
+            android.util.Log.d("ChatViewModel", "Available documents in index: ${index.documents.map { it.fileName }}")
+            
+            val documentsToSearch = if (selectedFileName != null && selectedFileName.isNotBlank()) {
+                val filtered = index.documents.filter { 
+                    val matches = it.fileName.equals(selectedFileName, ignoreCase = true)
+                    android.util.Log.d("ChatViewModel", "Comparing: '${it.fileName}' == '$selectedFileName' -> $matches")
+                    matches
+                }
+                android.util.Log.d("ChatViewModel", "Filtered documents for '$selectedFileName': ${filtered.size} found - ${filtered.map { it.fileName }}")
+                if (filtered.isEmpty()) {
+                    android.util.Log.w("ChatViewModel", "⚠️ No documents found for selected file '$selectedFileName'. Available: ${index.documents.map { it.fileName }}")
+                }
+                filtered
+            } else {
+                android.util.Log.d("ChatViewModel", "No file selected (selectedFileName is null or blank), using all ${index.documents.size} documents")
+                index.documents
+            }
+            
+            if (documentsToSearch.isEmpty()) {
+                val errorMsg = if (selectedFileName != null) {
+                    "No indexed documents found for selected file: $selectedFileName. Available documents: ${index.documents.map { it.fileName }}. Please index the file first."
+                } else {
+                    "No indexed documents found. Please index a file first."
+                }
                 android.util.Log.w("ChatViewModel", errorMsg)
                 _uiState.update { state ->
                     state.copy(
@@ -218,10 +251,13 @@ class ChatViewModel(
                 return
             }
             
-            val queryEmbedding = generateQueryEmbedding(currentInput)
-            val matchedChunks = findSimilarVectorsInJson(queryEmbedding, index, limit = 3)
+            val filteredIndex = index.copy(documents = documentsToSearch)
+            android.util.Log.d("ChatViewModel", "Searching in ${documentsToSearch.size} document(s)${if (selectedFileName != null) " (selected: $selectedFileName)" else ""}")
             
-            if (matchedChunks.isEmpty()) {
+            val queryEmbedding = generateQueryEmbedding(currentInput)
+            val allMatchedChunks = findSimilarVectorsInJson(queryEmbedding, filteredIndex, limit = 10)
+            
+            if (allMatchedChunks.isEmpty()) {
                 val errorMsg = "No relevant chunks found for the query."
                 android.util.Log.w("ChatViewModel", errorMsg)
                 _uiState.update { state ->
@@ -234,9 +270,36 @@ class ChatViewModel(
                 return
             }
             
+            val rerankingEnabled = _uiState.value.rerankingEnabled
+            val similarityThreshold = _uiState.value.rerankingSimilarityThreshold
+            
+            val filteredChunks = if (rerankingEnabled) {
+                val thresholdFloat = similarityThreshold / 100f
+                val filtered = allMatchedChunks.filter { it.similarity >= thresholdFloat }
+                android.util.Log.d("ChatViewModel", "Reranking enabled: filtered ${allMatchedChunks.size} chunks to ${filtered.size} (threshold: $similarityThreshold% = $thresholdFloat)")
+                filtered
+            } else {
+                android.util.Log.d("ChatViewModel", "Reranking disabled: using all ${allMatchedChunks.size} matched chunks")
+                allMatchedChunks
+            }
+            
+            if (filteredChunks.isEmpty()) {
+                val errorMsg = "No chunks found above similarity threshold ($similarityThreshold%). Try lowering the threshold."
+                android.util.Log.w("ChatViewModel", errorMsg)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = errorMsg
+                    )
+                }
+                _events.emit(ChatEvent.ShowError(errorMsg))
+                return
+            }
+            
+            val matchedChunks = filteredChunks.take(3)
             vectorJsonService.updateQuery(currentInput, queryEmbedding, matchedChunks)
             
-            android.util.Log.d("ChatViewModel", "Using RAG with Ollama (vector search), ${matchedChunks.size} matched chunks")
+            android.util.Log.d("ChatViewModel", "Using RAG with Ollama (vector search), ${matchedChunks.size} matched chunks${if (rerankingEnabled) " (after reranking)" else " (without reranking)"}")
             
             val contextText = matchedChunks.joinToString("\n\n---\n\n") { chunk ->
                 "Chunk #${chunk.chunkIndex}:\n${chunk.text}"
@@ -282,9 +345,16 @@ class ChatViewModel(
                 remoteControlDeviceId = null
             )
                 .onSuccess { aiMessage ->
-                    chatRepository.saveMessage(aiMessage)
-                    handleCheckMessageThreshold(aiMessage)
-                    val updatedMessages = _uiState.value.messages + userMessage + aiMessage
+                    val finalContent = if (rerankingEnabled) {
+                        aiMessage.content + "\n\n---\nС Ollama и фильтрацией"
+                    } else {
+                        aiMessage.content + "\n\n---\nС Ollama и без фильтрацией"
+                    }
+                    
+                    val finalMessage = aiMessage.copy(content = finalContent)
+                    chatRepository.saveMessage(finalMessage)
+                    handleCheckMessageThreshold(finalMessage)
+                    val updatedMessages = _uiState.value.messages + userMessage + finalMessage
                     val comparison = compareModelMetricsUseCase(updatedMessages, currentInput)
                     _uiState.update { state ->
                         state.copy(
@@ -616,7 +686,13 @@ class ChatViewModel(
     
     private fun loadOllamaState() {
         val enabled = preferencesManager.ollamaEnabled
-        _uiState.update { it.copy(ollamaEnabled = enabled) }
+        val selectedFile = preferencesManager.ollamaSelectedFile
+        _uiState.update { 
+            it.copy(
+                ollamaEnabled = enabled,
+                ollamaSelectedFile = selectedFile
+            ) 
+        }
         if (enabled) {
             // Проверяем доступность Ollama сервера
             checkOllamaConnection()
@@ -637,17 +713,43 @@ class ChatViewModel(
             // Индексация начнется после выбора файла
         } else {
             // При выключении очищаем выбранный файл
+            preferencesManager.ollamaSelectedFile = null
             _uiState.update { it.copy(ollamaSelectedFile = null) }
         }
     }
     
     private fun handleSelectOllamaFile(filePath: String?) {
         android.util.Log.d("ChatViewModel", "Select Ollama file: $filePath")
+        preferencesManager.ollamaSelectedFile = filePath
         _uiState.update { it.copy(ollamaSelectedFile = filePath) }
         if (filePath != null && _uiState.value.ollamaEnabled) {
             // Если Ollama включен и файл выбран, начинаем индексацию
             startIndexingForFile(filePath)
         }
+    }
+    
+    private fun loadRerankingState() {
+        val enabled = preferencesManager.rerankingEnabled
+        val threshold = preferencesManager.rerankingSimilarityThreshold
+        _uiState.update { 
+            it.copy(
+                rerankingEnabled = enabled,
+                rerankingSimilarityThreshold = threshold
+            ) 
+        }
+    }
+    
+    private fun handleToggleReranking(enabled: Boolean) {
+        android.util.Log.d("ChatViewModel", "Toggle Reranking: $enabled")
+        preferencesManager.rerankingEnabled = enabled
+        _uiState.update { it.copy(rerankingEnabled = enabled) }
+    }
+    
+    private fun handleSetRerankingSimilarityThreshold(threshold: Int) {
+        val clampedThreshold = threshold.coerceIn(0, 100)
+        android.util.Log.d("ChatViewModel", "Set Reranking Similarity Threshold: $clampedThreshold")
+        preferencesManager.rerankingSimilarityThreshold = clampedThreshold
+        _uiState.update { it.copy(rerankingSimilarityThreshold = clampedThreshold) }
     }
     
     private fun checkOllamaConnection() {

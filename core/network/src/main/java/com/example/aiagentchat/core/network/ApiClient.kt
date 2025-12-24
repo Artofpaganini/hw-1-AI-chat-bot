@@ -57,20 +57,24 @@ object ApiClient {
         .build()
 
     // DNS для локальных адресов - прямое разрешение IP без DNS запросов
+    // Важно: этот DNS используется ТОЛЬКО для локальных адресов (10.0.2.2, localhost, 127.0.0.1)
+    // и НЕ влияет на интернет-запросы, которые используют internetOkHttpClient с обычным DNS
     private val localDns = object : Dns {
         override fun lookup(hostname: String): List<InetAddress> {
             return try {
                 when {
                     hostname == "10.0.2.2" -> {
-                        Log.d(TAG, "Direct IP resolution for 10.0.2.2 (emulator localhost)")
+                        Log.d(TAG, "Direct IP resolution for 10.0.2.2 (emulator localhost) - no DNS query needed")
                         listOf(InetAddress.getByName("10.0.2.2"))
                     }
                     hostname == "localhost" || hostname == "127.0.0.1" -> {
-                        Log.d(TAG, "Direct IP resolution for localhost")
+                        Log.d(TAG, "Direct IP resolution for localhost - no DNS query needed")
                         listOf(InetAddress.getByName("127.0.0.1"))
                     }
                     else -> {
-                        Log.d(TAG, "Resolving local hostname: $hostname")
+                        // Для других адресов используем системный DNS
+                        // Это не должно происходить, так как localDns используется только для локальных адресов
+                        Log.w(TAG, "Unexpected hostname in localDns: $hostname, using SystemDns")
                         SystemDns.lookup(hostname)
                     }
                 }
@@ -83,7 +87,7 @@ object ApiClient {
     
     private val localOkHttpClient = OkHttpClient.Builder()
         .addInterceptor(loggingInterceptor)
-        .dns(localDns) // Используем специальный DNS для локальных адресов
+        .dns(localDns) // Используем специальный DNS ТОЛЬКО для локальных адресов
         .connectTimeout(60, TimeUnit.SECONDS) // Увеличено для Ollama (может быть медленным)
         .readTimeout(120, TimeUnit.SECONDS) // Увеличено для генерации embeddings
         .writeTimeout(60, TimeUnit.SECONDS)
@@ -99,9 +103,11 @@ object ApiClient {
         val client = if (isLocal) {
             Log.d(TAG, "Using local OkHttp client (with local DNS resolver) for: $baseUrl")
             Log.d(TAG, "Local addresses (10.0.2.2, localhost, 127.0.0.1) will be resolved directly")
+            Log.d(TAG, "⚠️ This client is ONLY for local addresses and does NOT affect internet requests")
             localOkHttpClient
         } else {
-            Log.d(TAG, "Using internet OkHttp client (with DNS resolver) for: $baseUrl")
+            Log.d(TAG, "Using internet OkHttp client (with standard DNS resolver) for: $baseUrl")
+            Log.d(TAG, "✅ Internet requests use standard DNS and are NOT affected by local DNS resolver")
             internetOkHttpClient
         }
         
