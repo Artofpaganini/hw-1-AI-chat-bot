@@ -1,103 +1,94 @@
-# 17HW_RAG_REQUEST - Реализация RAG функционала с Ollama
+# 17HW_RAG_REQUEST - Реализация RAG с LLM-as-a-Reranker
 
 ## Описание задачи
 
-Реализован функционал RAG (Retrieval-Augmented Generation) для работы с двумя сценариями:
-
-1. **Сценарий 1: Ollama включен (switcher ON)**
-   - User → AI Chat → Ollama → AI Chat
-   - AI chat обращается к Ollama для генерации ответа
-   - Ollama использует релевантные chunks из проиндексированных документов
-   - В ответе отображается информация о chunks (номера + summary)
-
-2. **Сценарий 2: Ollama выключен (switcher OFF)**
-   - User → AI Chat (формирует ответ самостоятельно)
-   - В конце ответа добавляется фраза "Без Ollama"
+Реализован функционал RAG (Retrieval-Augmented Generation) с использованием LLM-as-a-Reranker для улучшения качества поиска релевантных фрагментов документов.
 
 ## Что было сделано
 
-### 1. Добавлен Ollama Chat API
+### 1. Реализован LLM-as-a-Reranker
+
+**Файл:** `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/chat/ChatViewModel.kt`
+
+- Добавлена функция `performLlmReranking()` - выполняет reranking через LLM для всех кандидатов
+- Добавлена функция `evaluateRelevanceWithLlm()` - оценивает релевантность каждого чанка через phi3:medium
+- Используется модель `phi3:medium` для оценки релевантности
+- Промпт для оценки: "Оцени релевантность текста запросу по шкале от 0.0 до 1.0. Запрос: "...". Текст: "...". Ответь текст + релевантность текста в виде "Релевантность число". Никаких пояснений."
+- Парсинг ответа LLM для извлечения оценки релевантности (0.0-1.0)
+- Сортировка чанков по оценке релевантности (от большего к меньшему)
+
+### 2. Обновлен OllamaApi
 
 **Файл:** `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/data/api/OllamaApi.kt`
 
-- Добавлены модели данных для Chat API:
-  - `OllamaChatMessage` - сообщение для чата
-  - `OllamaChatRequest` - запрос на генерацию ответа
-  - `OllamaChatResponse` - ответ от Ollama
-- Добавлен endpoint `generateChat()` для генерации ответов через Ollama
-- Добавлена константа `DEFAULT_CHAT_MODEL = "llama3.2"` для модели генерации
+- Добавлена константа `DEFAULT_RERANKING_MODEL = "phi3:medium"` для модели reranking
 
-### 2. Модифицирована логика обработки сообщений
+### 3. Обновлена логика RAG запроса
 
 **Файл:** `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/chat/ChatViewModel.kt`
 
-- Модифицирован метод `handleSendMessageWithOllama()` для работы с AI chat
-- Функционал:
-  - Выполняет векторный поиск через Ollama (`nomic-embed-text`)
-  - Находит релевантные chunks
-  - Формирует промпт с контекстом и инструкцией для AI chat
-  - Отправляет запрос в AI chat (через `SendMessageUseCase`)
-  - AI chat сам формирует ответ и summary для chunks
+- Модифицирован метод `handleSendMessageWithOllama()`:
+  - Если reranking включен: используется LLM-as-a-Reranker для оценки всех кандидатов
+  - Если reranking выключен: используются все найденные чанки без reranking
+  - После reranking выбираются топ-3 чанка с наивысшей оценкой релевантности
 
-### 3. Модифицирован ChatViewModel
+### 4. Упрощен UI
 
-**Файл:** `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/chat/ChatViewModel.kt`
+**Файл:** `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/components/ToolsDialog.kt`
 
-- Добавлен `SendRagMessageUseCase` в конструктор
-- Модифицирован метод `handleSendMessage()`:
-  - Проверяет состояние `ollamaEnabled`
-  - Вызывает соответствующий метод обработки
-- Добавлен метод `handleSendMessageWithOllama()`:
-  - Выполняет векторный поиск релевантных chunks
-  - Использует `SendRagMessageUseCase` для генерации ответа через Ollama
-  - Формирует ответ с информацией о chunks (номера + summary)
-- Добавлен метод `handleSendMessageWithoutOllama()`:
-  - Использует обычный `SendMessageUseCase`
-  - Добавляет фразу "Без Ollama" в конец ответа
+- Убрано поле для ввода коэффициента похожести
+- Оставлен только switcher для включения/выключения reranking
+- Добавлено описание: "Reranking uses LLM (phi3:medium) to evaluate relevance of chunks to the query."
 
-### 4. Обновлена Dependency Injection
+### 5. Обновлены модели данных
 
-**Файл:** `app/src/main/java/com/example/aiagentchat/di/AppModule.kt`
-
-- Добавлен `SendRagMessageUseCase` в DI контейнер
-- Добавлен в конструктор `ChatViewModel`
+**Файлы:**
+- `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/chat/ChatUiState.kt` - убрано поле `rerankingSimilarityThreshold`
+- `core/common/src/main/java/com/example/aiagentchat/core/common/preferences/PreferencesManager.kt` - убрано поле `rerankingSimilarityThreshold`
+- `feature/home/src/main/java/com/example/aiagentchat/feature/home/presentation/HomeScreen.kt` - убраны параметры для коэффициента
 
 ## Принцип работы
 
-### Сценарий 1: Ollama включен
+### Шаг 1: Индексация документа (если еще не проиндексирован)
 
-1. Пользователь отправляет вопрос в AI chat
-2. AI chat проверяет, что Ollama включен (`ollamaEnabled = true`)
-3. Выполняется векторный поиск через Ollama:
-   - Вопрос конвертируется в embedding через Ollama (`nomic-embed-text`)
-   - Выполняется поиск похожих векторов (cosine similarity) в индексированных документах
-   - Находятся топ-3 наиболее релевантных chunks
-4. Формируется промпт с контекстом для AI chat:
-   - Контекст из найденных chunks (с номерами)
-   - Вопрос пользователя
-   - Инструкция для AI chat сформировать ответ и summary для каждого chunk'а
-5. Запрос отправляется в AI chat (выбранная модель: DeepSeek, Claude, GPT, Gemini)
-6. AI chat генерирует ответ на основе контекста из chunks
-7. AI chat сам формирует summary для каждого chunk'а на основе контекста
-8. Формируется финальный ответ:
+1. Пользователь выбирает файл для индексации
+2. Файл разбивается на чанки (500-700 токенов каждый)
+3. Для каждого чанка генерируется embedding через Ollama API (`nomic-embed-text`)
+4. Embeddings нормализуются к диапазону [0,1]
+5. Данные сохраняются в JSON файл (`vector_index.json`)
+
+### Шаг 2: Поиск кандидатов (Retrieval)
+
+1. Пользователь отправляет запрос в AI chat
+2. Запрос конвертируется в embedding через Ollama API (`nomic-embed-text`)
+3. Выполняется поиск похожих векторов (cosine similarity) в индексе
+4. Находится до 10 наиболее релевантных чанков-кандидатов
+5. Если выбран документ, поиск выполняется только в этом документе
+
+### Шаг 3: Reranking через LLM (если включен)
+
+1. Для каждого чанка-кандидата формируется промпт:
    ```
-   [Ответ от AI chat на основе контекста из chunks]
-   
-   ---
-   📚 Источники (chunks):
-     • Chunk #0: [summary chunk'а 0, сформированное AI chat]
-     • Chunk #1: [summary chunk'а 1, сформированное AI chat]
-     • Chunk #2: [summary chunk'а 2, сформированное AI chat]
-   ---
+   Оцени релевантность текста запросу по шкале от 0.0 до 1.0.
+   Запрос: "[запрос пользователя]"
+   Текст: "[текст чанка]"
+   Ответь текст + релевантность текста в виде "Релевантность число". Никаких пояснений.
    ```
 
-### Сценарий 2: Ollama выключен
+2. Промпт отправляется в Ollama API с моделью `phi3:medium`
+3. LLM возвращает оценку релевантности (0.0-1.0)
+4. Оценка парсится из ответа LLM
+5. Все чанки сортируются по оценке релевантности (от большего к меньшему)
+6. Выбираются топ-3 чанка с наивысшей оценкой
 
-1. Пользователь отправляет вопрос в AI chat
-2. AI chat проверяет, что Ollama выключен (`ollamaEnabled = false`)
-3. Используется обычный `SendMessageUseCase` с выбранной AI моделью
-4. AI модель формирует ответ самостоятельно
-5. В конец ответа добавляется фраза "Без Ollama"
+### Шаг 4: Генерация ответа
+
+1. Контекст из топ-3 чанков передается в AI chat (выбранная модель)
+2. AI chat формирует ответ на основе контекста
+3. AI chat создает summary для каждого чанка
+4. В конце ответа добавляется:
+   - "С Ollama и фильтрацией" - если reranking включен
+   - "С Ollama и без фильтрацией" - если reranking выключен
 
 ## Как запустить и проверить работоспособность
 
@@ -107,11 +98,12 @@
 # Установка и запуск Ollama
 ./setup-ollama.sh
 
+# Убедитесь, что установлены обе модели:
+ollama pull nomic-embed-text  # Для embeddings
+ollama pull phi3:medium       # Для reranking
+
 # Проверка подключения
 ./test-ollama-connection.sh
-
-# Убедитесь, что установлена модель для генерации ответов
-ollama pull llama3.2
 ```
 
 ### Шаг 2: Запуск приложения
@@ -131,152 +123,133 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 3. Включите "Ollama Vector Search" (switcher)
 4. Выберите файл для индексации (кнопка "Select File")
 5. Дождитесь завершения индексации
+6. **Включите "Reranking (Filtering)"** (switcher)
 
-### Шаг 4: Проверка сценария 1 (Ollama включен)
+### Шаг 4: Проверка сценария 1 (Ollama + Reranking включены)
 
-1. Убедитесь, что switcher Ollama включен
-2. Задайте вопрос, связанный с содержимым проиндексированного файла
-3. Проверьте ответ:
-   - Должен быть ответ от Ollama
+1. Убедитесь, что оба switcher'а включены (Ollama и Reranking)
+2. Выберите документ (если несколько документов проиндексировано)
+3. Задайте вопрос, связанный с содержимым проиндексированного файла
+4. Проверьте ответ:
+   - Должен быть ответ от AI chat
    - В конце должны быть указаны номера chunks и их summary
-   - Формат: `Chunk #N: [summary]`
+   - В конце ответа должна быть фраза **"С Ollama и фильтрацией"**
+   - Chunks должны быть отранжированы по релевантности через LLM
 
-**Пример:**
-```
-Вопрос: "Что такое Clean Architecture?"
-
-Ответ:
-[Ответ от Ollama на основе контекста]
-
----
-📚 Источники (chunks):
-  • Chunk #0: Clean Architecture - это архитектурный подход...
-  • Chunk #1: Разделение на слои: domain, data, presentation...
-  • Chunk #2: Принципы SOLID и зависимостей...
----
+**Проверка в логах:**
+```bash
+adb logcat | grep -E "ChatViewModel.*reranking|Reranking|LLM"
 ```
 
-### Шаг 5: Проверка сценария 2 (Ollama выключен)
+Ожидаемые логи:
+```
+Starting LLM reranking for N chunks
+Sending reranking request to phi3:medium
+Chunk 0: relevance score = 0.85
+Reranking completed. Top scores: [0.85, 0.78, 0.72]
+Using RAG with Ollama (vector search), 3 matched chunks (after reranking)
+```
 
-1. Выключите switcher Ollama
+### Шаг 5: Проверка сценария 2 (Ollama включен, Reranking выключен)
+
+1. Включите Ollama, но выключите Reranking
+2. Выберите документ (если нужно)
+3. Задайте вопрос
+4. Проверьте ответ:
+   - Должен быть ответ от AI chat
+   - В конце должна быть фраза **"С Ollama и без фильтрацией"**
+   - Используются все найденные chunks без reranking
+
+**Проверка в логах:**
+```
+Reranking disabled: using all N matched chunks
+Using RAG with Ollama (vector search), 3 matched chunks (without reranking)
+```
+
+### Шаг 6: Проверка сценария 3 (Ollama выключен)
+
+1. Выключите Ollama
 2. Задайте любой вопрос
 3. Проверьте ответ:
    - Должен быть ответ от выбранной AI модели
-   - В конце должна быть фраза "Без Ollama"
-
-**Пример:**
-```
-Вопрос: "Привет, как дела?"
-
-Ответ:
-[Ответ от AI модели]
-
----
-Без Ollama
-```
-
-### Шаг 6: Проверка логов
-
-```bash
-# Просмотр логов приложения
-adb logcat | grep -E "ChatViewModel|SendRagMessageUseCase|OllamaApi"
-
-# Ожидаемые логи:
-# - "Using RAG with Ollama, N matched chunks"
-# - "Sending request to Ollama chat API with model: llama3.2"
-# - "✅ Generated response from Ollama"
-```
+   - В конце должна быть фраза **"Без Ollama"**
 
 ## Решение проблем
 
-### Проблема: "No indexed documents found"
+### Проблема: "phi3:medium model not found"
 
 **Решение:**
-1. Убедитесь, что файл был выбран и проиндексирован
-2. Проверьте логи индексации
-3. Попробуйте выбрать файл заново
+1. Установите модель: `ollama pull phi3:medium`
+2. Проверьте установку: `ollama list | grep phi3`
+3. Перезапустите Ollama сервер: `ollama serve`
 
-### Проблема: "No relevant chunks found for the query"
-
-**Решение:**
-1. Задайте вопрос, более связанный с содержимым файла
-2. Проверьте, что файл был правильно проиндексирован
-3. Проверьте JSON Export для просмотра индексированных данных
-
-### Проблема: "Failed to generate response from AI chat"
+### Проблема: Reranking не работает (используются все chunks)
 
 **Решение:**
-1. Проверьте, что Ollama сервер запущен для векторного поиска: `curl http://localhost:11434/api/tags`
-2. Проверьте, что модель `nomic-embed-text` установлена: `ollama list | grep nomic-embed-text`
-3. Если модель не установлена: `ollama pull nomic-embed-text`
-4. Проверьте подключение из эмулятора: `adb shell curl http://10.0.2.2:11434/api/tags`
-5. Проверьте, что API ключи для AI моделей настроены в `local.properties`
+1. Проверьте, что switcher Reranking включен
+2. Проверьте логи на наличие сообщений о reranking
+3. Убедитесь, что модель phi3:medium установлена
+4. Проверьте, что Ollama сервер доступен
 
-### Проблема: Ответ не содержит информацию о chunks
-
-**Решение:**
-1. Проверьте логи на наличие ошибок генерации summary
-2. Убедитесь, что chunks были найдены (проверьте логи)
-3. Проверьте, что `matchedChunks` не пустой
-
-### Проблема: Компиляция не проходит
+### Проблема: Не удается распарсить оценку релевантности
 
 **Решение:**
-1. Убедитесь, что все файлы сохранены
-2. Очистите проект: `./gradlew clean`
-3. Пересоберите: `./gradlew assembleDebug`
+1. Проверьте логи на ответы от LLM
+2. Убедитесь, что модель phi3:medium правильно отвечает на промпт
+3. При ошибке парсинга используется среднее значение (0.5)
+
+### Проблема: Reranking работает медленно
+
+**Решение:**
+1. Reranking требует запросов к LLM для каждого кандидата (до 10 запросов)
+2. Это нормально - reranking улучшает качество, но требует времени
+3. Можно уменьшить количество кандидатов (сейчас до 10)
 
 ## Технические детали
 
-### Используемые модели
+### Модели
 
-- **Ollama для embeddings:** `nomic-embed-text` (по умолчанию) - используется только для векторного поиска
-- **AI Chat для генерации ответов:** выбранная модель пользователя (DeepSeek, Claude 3.5 Sonnet, GPT-4o Mini, Gemini Pro 1.5) - формирует ответ и summary
+- **nomic-embed-text**: Используется для генерации embeddings (индексация и поиск)
+- **phi3:medium**: Используется для reranking (оценка релевантности)
 
-### Параметры векторного поиска
+### Параметры поиска
 
-- Количество найденных chunks: 3 (топ-3 наиболее релевантных)
-- Метрика схожести: cosine similarity
-- Нормализация векторов: к диапазону [0, 1]
+- **Максимум кандидатов для reranking:** 10
+- **Используется после reranking:** топ-3 chunks
+- **Диапазон оценки релевантности:** 0.0-1.0 (Float)
 
-### Формат ответа с chunks
-
-```
-[Основной ответ от Ollama]
-
----
-📚 Источники (chunks):
-  • Chunk #0: [summary chunk'а 0]
-  • Chunk #1: [summary chunk'а 1]
-  • Chunk #2: [summary chunk'а 2]
----
-```
-
-### Формат ответа без Ollama
+### Формат промпта для reranking
 
 ```
-[Ответ от AI модели]
-
----
-Без Ollama
+Оцени релевантность текста запросу по шкале от 0.0 до 1.0.
+Запрос: "[запрос пользователя]"
+Текст: "[текст чанка (до 1000 символов)]"
+Ответь текст + релевантность текста в виде "Релевантность число". Никаких пояснений.
 ```
+
+### Парсинг ответа LLM
+
+1. Ищется паттерн "Релевантность число"
+2. Если не найден, ищется любое число от 0.0 до 1.0
+3. Если не удалось распарсить, используется 0.5 (среднее значение)
 
 ## Файлы, которые были изменены/созданы
 
-1. `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/chat/ChatViewModel.kt` - модифицирован для RAG с использованием AI chat
-2. `app/src/main/java/com/example/aiagentchat/di/AppModule.kt` - обновлен DI (удален SendRagMessageUseCase)
-3. `README.md` - обновлена документация
-4. `17HW_RAG_REQUEST.md` - этот файл с описанием реализации
-
-**Примечание:** Ollama Chat API не используется. Ollama применяется только для генерации embeddings через `nomic-embed-text`.
+1. `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/chat/ChatViewModel.kt` - добавлен LLM reranking
+2. `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/data/api/OllamaApi.kt` - добавлена константа для модели reranking
+3. `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/components/ToolsDialog.kt` - упрощен UI
+4. `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/chat/ChatUiState.kt` - убрано поле коэффициента
+5. `core/common/src/main/java/com/example/aiagentchat/core/common/preferences/PreferencesManager.kt` - убрано поле коэффициента
+6. `feature/home/src/main/java/com/example/aiagentchat/feature/home/presentation/HomeScreen.kt` - убраны параметры коэффициента
+7. `README.md` - обновлена документация
+8. `17HW_RAG_REQUEST.md` - этот файл с описанием реализации
 
 ## Заключение
 
-Реализован полноценный RAG функционал с поддержкой двух сценариев работы:
-- **С Ollama включенным:** Ollama используется только для векторного поиска (embeddings через `nomic-embed-text`), ответ и summary формирует AI chat на основе найденных chunks
-- **Без Ollama:** обычная генерация ответов через AI chat с добавлением фразы "Без Ollama"
+Реализован полноценный функционал RAG с LLM-as-a-Reranker:
 
-**Ключевая особенность:** Ollama используется исключительно для векторного поиска, а генерация ответов и summary выполняется AI chat моделями (DeepSeek, Claude, GPT, Gemini).
+- **Retrieval:** Поиск кандидатов через embeddings (nomic-embed-text)
+- **Reranking:** Оценка релевантности через LLM (phi3:medium)
+- **Generation:** Генерация ответа через AI chat с контекстом из топ-3 чанков
 
 Функционал протестирован, компиляция проходит успешно, все зависимости корректно настроены.
-

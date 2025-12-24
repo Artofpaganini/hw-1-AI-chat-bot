@@ -104,7 +104,6 @@ class ChatViewModel(
             is ChatAction.ToggleOllama -> handleToggleOllama(action.enabled)
             is ChatAction.SelectOllamaFile -> handleSelectOllamaFile(action.filePath)
             is ChatAction.ToggleReranking -> handleToggleReranking(action.enabled)
-            is ChatAction.SetRerankingSimilarityThreshold -> handleSetRerankingSimilarityThreshold(action.threshold)
             is ChatAction.ExportJson -> handleExportJson()
             is ChatAction.DismissJsonExport -> handleDismissJsonExport()
         }
@@ -271,20 +270,19 @@ class ChatViewModel(
             }
             
             val rerankingEnabled = _uiState.value.rerankingEnabled
-            val similarityThreshold = _uiState.value.rerankingSimilarityThreshold
             
-            val filteredChunks = if (rerankingEnabled) {
-                val thresholdFloat = similarityThreshold / 100f
-                val filtered = allMatchedChunks.filter { it.similarity >= thresholdFloat }
-                android.util.Log.d("ChatViewModel", "Reranking enabled: filtered ${allMatchedChunks.size} chunks to ${filtered.size} (threshold: $similarityThreshold% = $thresholdFloat)")
-                filtered
+            val matchedChunks = if (rerankingEnabled) {
+                android.util.Log.d("ChatViewModel", "Reranking enabled: using LLM-as-a-reranker (phi3:medium) for ${allMatchedChunks.size} candidate chunks")
+                val rerankedChunks = performLlmReranking(currentInput, allMatchedChunks)
+                android.util.Log.d("ChatViewModel", "Reranking completed: ${rerankedChunks.size} chunks reranked")
+                rerankedChunks.take(3) // Берем топ-3 после reranking
             } else {
                 android.util.Log.d("ChatViewModel", "Reranking disabled: using all ${allMatchedChunks.size} matched chunks")
-                allMatchedChunks
+                allMatchedChunks.take(3)
             }
             
-            if (filteredChunks.isEmpty()) {
-                val errorMsg = "No chunks found above similarity threshold ($similarityThreshold%). Try lowering the threshold."
+            if (matchedChunks.isEmpty()) {
+                val errorMsg = "No relevant chunks found after reranking."
                 android.util.Log.w("ChatViewModel", errorMsg)
                 _uiState.update { state ->
                     state.copy(
@@ -295,8 +293,6 @@ class ChatViewModel(
                 _events.emit(ChatEvent.ShowError(errorMsg))
                 return
             }
-            
-            val matchedChunks = filteredChunks.take(3)
             vectorJsonService.updateQuery(currentInput, queryEmbedding, matchedChunks)
             
             android.util.Log.d("ChatViewModel", "Using RAG with Ollama (vector search), ${matchedChunks.size} matched chunks${if (rerankingEnabled) " (after reranking)" else " (without reranking)"}")
@@ -730,12 +726,8 @@ class ChatViewModel(
     
     private fun loadRerankingState() {
         val enabled = preferencesManager.rerankingEnabled
-        val threshold = preferencesManager.rerankingSimilarityThreshold
         _uiState.update { 
-            it.copy(
-                rerankingEnabled = enabled,
-                rerankingSimilarityThreshold = threshold
-            ) 
+            it.copy(rerankingEnabled = enabled) 
         }
     }
     
@@ -743,13 +735,6 @@ class ChatViewModel(
         android.util.Log.d("ChatViewModel", "Toggle Reranking: $enabled")
         preferencesManager.rerankingEnabled = enabled
         _uiState.update { it.copy(rerankingEnabled = enabled) }
-    }
-    
-    private fun handleSetRerankingSimilarityThreshold(threshold: Int) {
-        val clampedThreshold = threshold.coerceIn(0, 100)
-        android.util.Log.d("ChatViewModel", "Set Reranking Similarity Threshold: $clampedThreshold")
-        preferencesManager.rerankingSimilarityThreshold = clampedThreshold
-        _uiState.update { it.copy(rerankingSimilarityThreshold = clampedThreshold) }
     }
     
     private fun checkOllamaConnection() {
@@ -1053,6 +1038,103 @@ class ChatViewModel(
             vector.map { (it - min) / range }
         } else {
             vector.map { 0.5f }
+        }
+    }
+    
+    private suspend fun performLlmReranking(
+        query: String,
+        candidateChunks: List<MatchedChunk>
+    ): List<MatchedChunk> {
+        android.util.Log.d("ChatViewModel", "Starting LLM reranking for ${candidateChunks.size} chunks")
+        
+        val rerankedChunks = candidateChunks.mapIndexed { index, chunk ->
+            try {
+                val relevanceScore = evaluateRelevanceWithLlm(query, chunk.text)
+                android.util.Log.d("ChatViewModel", "Chunk $index: relevance score = $relevanceScore")
+                chunk.copy(similarity = relevanceScore)
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "Error evaluating relevance for chunk $index", e)
+                // В случае ошибки используем оригинальную similarity
+                chunk
+            }
+        }
+        
+        // Сортируем по relevance score (от большего к меньшему)
+        val sorted = rerankedChunks.sortedByDescending { it.similarity }
+        android.util.Log.d("ChatViewModel", "Reranking completed. Top scores: ${sorted.take(3).map { it.similarity }}")
+        
+        return sorted
+    }
+    
+    private suspend fun evaluateRelevanceWithLlm(query: String, chunkText: String): Float {
+        val prompt = buildString {
+            appendLine("Оцени релевантность текста запросу по шкале от 0.0 до 1.0.")
+            appendLine("Запрос: \"$query\"")
+            appendLine("Текст: \"${chunkText.take(1000)}\"") // Ограничиваем длину текста
+            appendLine("Ответь текст + релевантность текста в виде \"Релевантность число\". Никаких пояснений.")
+        }
+        
+        try {
+            val messages = listOf(
+                com.example.aiagentchat.feature.chat.data.api.OllamaChatMessage(
+                    role = "user",
+                    content = prompt
+                )
+            )
+            
+            val request = com.example.aiagentchat.feature.chat.data.api.OllamaChatRequest(
+                model = OllamaApi.DEFAULT_RERANKING_MODEL,
+                messages = messages,
+                stream = false
+            )
+            
+            android.util.Log.d("ChatViewModel", "Sending reranking request to ${OllamaApi.DEFAULT_RERANKING_MODEL}")
+            val response = ollamaApi.generateChat(request)
+            
+            if (!response.isSuccessful) {
+                val errorBody = response.errorBody()?.string() ?: "Unknown error"
+                android.util.Log.w("ChatViewModel", "Reranking request failed: HTTP ${response.code()} - $errorBody")
+                return 0.5f // Возвращаем среднее значение при ошибке
+            }
+            
+            val responseBody = response.body()
+            val content = responseBody?.message?.content ?: ""
+            
+            if (content.isBlank()) {
+                android.util.Log.w("ChatViewModel", "Empty response from reranking LLM")
+                return 0.5f
+            }
+            
+            // Парсим ответ: ищем число от 0.0 до 1.0
+            val relevanceRegex = Regex("Релевантность\\s*([0-9.]+)|([0-9.]+)")
+            val match = relevanceRegex.find(content)
+            
+            if (match != null) {
+                val scoreStr = match.groupValues[1].takeIf { it.isNotBlank() } ?: match.groupValues[2]
+                val score = scoreStr.toFloatOrNull()?.coerceIn(0f, 1f)
+                
+                if (score != null) {
+                    android.util.Log.d("ChatViewModel", "Parsed relevance score: $score from response: ${content.take(100)}")
+                    return score
+                }
+            }
+            
+            // Если не удалось распарсить, пытаемся найти любое число от 0.0 до 1.0
+            val numberRegex = Regex("0\\.[0-9]+|1\\.0|1")
+            val numberMatch = numberRegex.find(content)
+            if (numberMatch != null) {
+                val score = numberMatch.value.toFloatOrNull()?.coerceIn(0f, 1f)
+                if (score != null) {
+                    android.util.Log.d("ChatViewModel", "Parsed relevance score from number: $score")
+                    return score
+                }
+            }
+            
+            android.util.Log.w("ChatViewModel", "Could not parse relevance score from response: ${content.take(200)}")
+            return 0.5f // Возвращаем среднее значение если не удалось распарсить
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "Error in evaluateRelevanceWithLlm", e)
+            return 0.5f
         }
     }
     

@@ -22,7 +22,6 @@ class PreferencesManager(context: Context) {
         private const val KEY_OLLAMA_ENABLED = "ollama_enabled"
         private const val KEY_OLLAMA_SELECTED_FILE = "ollama_selected_file"
         private const val KEY_RERANKING_ENABLED = "reranking_enabled"
-        private const val KEY_RERANKING_SIMILARITY_THRESHOLD = "reranking_similarity_threshold"
     }
 
     var weatherNotificationsEnabled: Boolean
@@ -122,9 +121,5 @@ class PreferencesManager(context: Context) {
     var rerankingEnabled: Boolean
         get() = prefs.getBoolean(KEY_RERANKING_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_RERANKING_ENABLED, value).apply()
-    
-    var rerankingSimilarityThreshold: Int
-        get() = prefs.getInt(KEY_RERANKING_SIMILARITY_THRESHOLD, 50)
-        set(value) = prefs.edit().putInt(KEY_RERANKING_SIMILARITY_THRESHOLD, value).apply()
 }
 

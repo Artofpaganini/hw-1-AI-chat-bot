@@ -45,6 +45,7 @@ interface OllamaApi {
     companion object {
         const val DEFAULT_BASE_URL = "http://10.0.2.2:11434/"
         const val DEFAULT_MODEL = "nomic-embed-text"
+        const val DEFAULT_RERANKING_MODEL = "phi3:medium" // Модель для reranking
         const val DEFAULT_CHAT_MODEL = "nomic-embed-text" // Модель для генерации ответов
         private const val TAG = "OllamaApi"
 

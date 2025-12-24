@@ -62,8 +62,6 @@ fun ToolsDialog(
     onOllamaSelectFile: () -> Unit = {},
     rerankingEnabled: Boolean = false,
     onRerankingToggle: (Boolean) -> Unit = {},
-    rerankingSimilarityThreshold: Int = 50,
-    onRerankingThresholdChange: (Int) -> Unit = {},
     mcpServers: List<McpServer> = emptyList(),
     enabledMcpServerTools: Map<String, Set<String>> = emptyMap(),
     onServerToolToggle: (String, String, Boolean) -> Unit = { _, _, _ -> }
@@ -150,9 +148,7 @@ fun ToolsDialog(
                             selectedFile = ollamaSelectedFile,
                             onSelectFile = onOllamaSelectFile,
                             rerankingEnabled = rerankingEnabled,
-                            onRerankingToggle = onRerankingToggle,
-                            rerankingSimilarityThreshold = rerankingSimilarityThreshold,
-                            onRerankingThresholdChange = onRerankingThresholdChange
+                            onRerankingToggle = onRerankingToggle
                         )
                         if (mcpServers.isNotEmpty()) {
                             HorizontalDivider(
@@ -354,9 +350,7 @@ private fun OllamaItem(
     selectedFile: String? = null,
     onSelectFile: () -> Unit = {},
     rerankingEnabled: Boolean = false,
-    onRerankingToggle: (Boolean) -> Unit = {},
-    rerankingSimilarityThreshold: Int = 50,
-    onRerankingThresholdChange: (Int) -> Unit = {}
+    onRerankingToggle: (Boolean) -> Unit = {}
 ) {
     Surface(
         shape = MaterialTheme.shapes.medium,
@@ -468,46 +462,12 @@ private fun OllamaItem(
                     }
                     
                     if (rerankingEnabled) {
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Similarity Threshold (%)",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                        Text(
-                            text = "Chunks with similarity below this threshold will be filtered out. Range: 0-100 (default: 50).",
+                            text = "Reranking uses LLM (phi3:medium) to evaluate relevance of chunks to the query.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                        var thresholdText by remember(rerankingSimilarityThreshold) { 
-                            mutableStateOf(rerankingSimilarityThreshold.toString()) 
-                        }
-                        
-                        LaunchedEffect(rerankingSimilarityThreshold) {
-                            thresholdText = rerankingSimilarityThreshold.toString()
-                        }
-                        
-                        OutlinedTextField(
-                            value = thresholdText,
-                            onValueChange = { newValue ->
-                                if (newValue.isEmpty() || newValue.all { it.isDigit() }) {
-                                    thresholdText = newValue
-                                    val value = newValue.toIntOrNull()
-                                    if (value != null && value in 0..100) {
-                                        onRerankingThresholdChange(value)
-                                    }
-                                }
-                            },
-                            label = { Text("Threshold (0-100)") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = TextFieldDefaults.colors(
-                                focusedIndicatorColor = MaterialTheme.colorScheme.primary,
-                                unfocusedIndicatorColor = MaterialTheme.colorScheme.outline
-                            )
+                            modifier = Modifier.padding(top = 4.dp)
                         )
                     }
                 }
