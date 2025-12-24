@@ -272,12 +272,15 @@ class ChatViewModel(
             val rerankingEnabled = _uiState.value.rerankingEnabled
             
             val matchedChunks = if (rerankingEnabled) {
-                android.util.Log.d("ChatViewModel", "Reranking enabled: using LLM-as-a-reranker (phi3:medium) for ${allMatchedChunks.size} candidate chunks")
+                android.util.Log.d("ChatViewModel", "🔄 Reranking enabled: using LLM-as-a-reranker (${OllamaApi.DEFAULT_RERANKING_MODEL}) for ${allMatchedChunks.size} candidate chunks")
                 val rerankedChunks = performLlmReranking(currentInput, allMatchedChunks)
-                android.util.Log.d("ChatViewModel", "Reranking completed: ${rerankedChunks.size} chunks reranked")
-                rerankedChunks.take(3) // Берем топ-3 после reranking
+                android.util.Log.d("ChatViewModel", "✅ Reranking completed: ${rerankedChunks.size} chunks reranked")
+                // Берем топ-3 самых релевантных чанков (отсортированы по убыванию, где 1.0 = максимальная релевантность)
+                val top3Chunks = rerankedChunks.take(3)
+                android.util.Log.d("ChatViewModel", "📌 Selected top 3 chunks: ${top3Chunks.mapIndexed { i, chunk -> "#${chunk.chunkIndex} (score=${chunk.similarity})" }}")
+                top3Chunks
             } else {
-                android.util.Log.d("ChatViewModel", "Reranking disabled: using all ${allMatchedChunks.size} matched chunks")
+                android.util.Log.d("ChatViewModel", "⏭️ Reranking disabled: using top ${allMatchedChunks.size} matched chunks by cosine similarity")
                 allMatchedChunks.take(3)
             }
             
@@ -1045,34 +1048,40 @@ class ChatViewModel(
         query: String,
         candidateChunks: List<MatchedChunk>
     ): List<MatchedChunk> {
-        android.util.Log.d("ChatViewModel", "Starting LLM reranking for ${candidateChunks.size} chunks")
+        android.util.Log.d("ChatViewModel", "🔄 Starting LLM reranking for ${candidateChunks.size} candidate chunks")
+        android.util.Log.d("ChatViewModel", "Using model: ${OllamaApi.DEFAULT_RERANKING_MODEL}")
         
+        // Оцениваем релевантность каждого кандидата через LLM
         val rerankedChunks = candidateChunks.mapIndexed { index, chunk ->
             try {
+                android.util.Log.d("ChatViewModel", "Evaluating relevance for chunk ${index + 1}/${candidateChunks.size} (chunk #${chunk.chunkIndex})")
                 val relevanceScore = evaluateRelevanceWithLlm(query, chunk.text)
-                android.util.Log.d("ChatViewModel", "Chunk $index: relevance score = $relevanceScore")
+                android.util.Log.d("ChatViewModel", "✅ Chunk ${index + 1}: relevance score = $relevanceScore (chunk #${chunk.chunkIndex})")
                 chunk.copy(similarity = relevanceScore)
             } catch (e: Exception) {
-                android.util.Log.e("ChatViewModel", "Error evaluating relevance for chunk $index", e)
+                android.util.Log.e("ChatViewModel", "❌ Error evaluating relevance for chunk ${index + 1} (chunk #${chunk.chunkIndex})", e)
                 // В случае ошибки используем оригинальную similarity
                 chunk
             }
         }
         
-        // Сортируем по relevance score (от большего к меньшему)
+        // Сортируем по relevance score по убыванию (1.0 = максимальная релевантность)
         val sorted = rerankedChunks.sortedByDescending { it.similarity }
-        android.util.Log.d("ChatViewModel", "Reranking completed. Top scores: ${sorted.take(3).map { it.similarity }}")
+        android.util.Log.d("ChatViewModel", "📊 Reranking completed. Top 3 scores: ${sorted.take(3).mapIndexed { i, chunk -> "Chunk #${chunk.chunkIndex}=${chunk.similarity}" }}")
         
         return sorted
     }
     
     private suspend fun evaluateRelevanceWithLlm(query: String, chunkText: String): Float {
+        // Формируем промпт для оценки релевантности согласно требованиям
         val prompt = buildString {
             appendLine("Оцени релевантность текста запросу по шкале от 0.0 до 1.0.")
             appendLine("Запрос: \"$query\"")
-            appendLine("Текст: \"${chunkText.take(1000)}\"") // Ограничиваем длину текста
+            appendLine("Текст: \"${chunkText.take(1000)}\"") // Ограничиваем длину текста для промпта
             appendLine("Ответь текст + релевантность текста в виде \"Релевантность число\". Никаких пояснений.")
         }
+        
+        android.util.Log.d("ChatViewModel", "📝 Reranking prompt: ${prompt.take(200)}...")
         
         try {
             val messages = listOf(

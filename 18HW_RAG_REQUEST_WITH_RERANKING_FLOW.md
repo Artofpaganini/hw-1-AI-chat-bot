@@ -1,117 +1,105 @@
-# 18HW_RAG_REQUEST_WITH_RERANKING_FLOW - Реализация RAG с Reranking функционалом
+# 18HW_RAG_REQUEST_WITH_RERANKING_FLOW - Реализация RAG с LLM-as-a-Reranker
 
 ## Описание задачи
 
-Реализован функционал reranking (реранкинга) для фильтрации chunks по коэффициенту похожести в RAG пайплайне. Добавлена возможность включения/выключения фильтрации с настройкой порога похожести.
+Реализован функционал RAG (Retrieval-Augmented Generation) с использованием LLM-as-a-Reranker для улучшения качества поиска релевантных фрагментов документов. Reranking выполняется через LLM (`phi3:medium`), который оценивает релевантность каждого кандидата к запросу пользователя.
 
 ## Что было сделано
 
-### 1. Добавлены поля в PreferencesManager
-
-**Файл:** `core/common/src/main/java/com/example/aiagentchat/core/common/preferences/PreferencesManager.kt`
-
-- Добавлено поле `ollamaSelectedFile: String?` - путь к выбранному файлу (сохраняется между сессиями)
-- Добавлено поле `rerankingEnabled: Boolean` - состояние включения reranking
-- Добавлено поле `rerankingSimilarityThreshold: Int` - коэффициент похожести (0-100, по умолчанию 50)
-- Состояние сохраняется между сессиями через SharedPreferences
-
-### 2. Обновлен ChatUiState
-
-**Файл:** `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/chat/ChatUiState.kt`
-
-- Добавлены поля:
-  - `rerankingEnabled: Boolean = false`
-  - `rerankingSimilarityThreshold: Int = 50`
-- Добавлены действия:
-  - `ToggleReranking(val enabled: Boolean)`
-  - `SetRerankingSimilarityThreshold(val threshold: Int)`
-
-### 3. Обновлен ChatViewModel
+### 1. Реализован LLM-as-a-Reranker
 
 **Файл:** `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/chat/ChatViewModel.kt`
 
-- Модифицирован `loadOllamaState()`:
-  - Загружает выбранный файл из PreferencesManager
-  - Восстанавливает состояние выбранного файла при инициализации
-- Модифицирован `handleSelectOllamaFile()`:
-  - Сохраняет выбранный файл в PreferencesManager
-  - Сохраняет путь к файлу для использования между сессиями
-- Добавлены методы:
-  - `loadRerankingState()` - загрузка состояния reranking при инициализации
-  - `handleToggleReranking(enabled: Boolean)` - обработка включения/выключения reranking
-  - `handleSetRerankingSimilarityThreshold(threshold: Int)` - установка порога похожести
-- Модифицирован `handleSendMessageWithOllama()`:
+- Добавлена функция `performLlmReranking()` - выполняет reranking через LLM для всех кандидатов
+- Добавлена функция `evaluateRelevanceWithLlm()` - оценивает релевантность каждого чанка через phi3:medium
+- Используется модель `phi3:medium` для оценки релевантности
+- Промпт для оценки: 
+  ```
+  Оцени релевантность текста запросу по шкале от 0.0 до 1.0.
+  Запрос: "[запрос пользователя]"
+  Текст: "[текст чанка]"
+  Ответь текст + релевантность текста в виде "Релевантность число". Никаких пояснений.
+  ```
+- Парсинг ответа LLM для извлечения оценки релевантности (0.0-1.0)
+- Сортировка чанков по оценке релевантности по убыванию (1.0 = максимальная релевантность)
+- Выбор топ-3 самых релевантных чанков
+
+### 2. Обновлен OllamaApi
+
+**Файл:** `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/data/api/OllamaApi.kt`
+
+- Добавлена константа `DEFAULT_RERANKING_MODEL = "phi3:medium"` для модели reranking
+
+### 3. Обновлена логика RAG запроса
+
+**Файл:** `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/chat/ChatViewModel.kt`
+
+- Модифицирован метод `handleSendMessageWithOllama()`:
   - Определяется выбранный пользователем документ из `ollamaSelectedFile` (сохраняется в PreferencesManager)
   - Имя файла извлекается из пути и сравнивается с именами документов в индексе (без учета регистра)
   - Поиск выполняется только в выбранном документе (или во всех, если не выбран)
-  - Добавлено подробное логирование для отладки (путь файла, имя файла, доступные документы)
-  - Выполняется поиск до 10 chunks (вместо 3)
-  - Если reranking включен: фильтруются chunks по порогу похожести, добавляется "С Ollama и фильтрацией"
-  - Если reranking выключен: используются все найденные chunks, добавляется "С Ollama и без фильтрацией"
-  - Используются топ-3 chunks после фильтрации
+  - Выполняется поиск до 10 кандидатов через embeddings (nomic-embed-text)
+  - Если reranking включен: используется LLM-as-a-Reranker для оценки всех кандидатов, выбираются топ-3
+  - Если reranking выключен: используются все найденные чанки без reranking, выбираются топ-3 по косинусному сходству
+  - Добавлено подробное логирование для отладки
 
-### 4. Обновлен UI (ToolsDialog)
+### 4. Упрощен UI
 
 **Файл:** `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/components/ToolsDialog.kt`
 
-- Модифицирован `OllamaItem`:
-  - Добавлен switcher для reranking
-  - Добавлено поле для ввода коэффициента похожести (0-100)
-  - Поле коэффициента отображается только когда reranking включен
-  - Используется локальное состояние для TextField, позволяющее вводить любое значение
-  - Значение обновляется при вводе валидного числа в диапазоне 0-100
-- Обновлена сигнатура `ToolsDialog` для передачи параметров reranking
+- Убрано поле для ввода коэффициента похожести
+- Оставлен только switcher для включения/выключения reranking
+- Добавлено описание: "Reranking uses LLM (phi3:medium) to evaluate relevance of chunks to the query."
 
-### 5. Обновлен HomeScreen
+### 5. Обновлены модели данных
 
-**Файл:** `feature/home/src/main/java/com/example/aiagentchat/feature/home/presentation/HomeScreen.kt`
-
-- Добавлена передача параметров reranking в `ToolsDialog`
-- Подключены обработчики для toggle и изменения threshold
+**Файлы:**
+- `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/chat/ChatUiState.kt` - убрано поле `rerankingSimilarityThreshold`
+- `core/common/src/main/java/com/example/aiagentchat/core/common/preferences/PreferencesManager.kt` - добавлено поле `ollamaSelectedFile`, убрано поле `rerankingSimilarityThreshold`
+- `feature/home/src/main/java/com/example/aiagentchat/feature/home/presentation/HomeScreen.kt` - убраны параметры для коэффициента
 
 ## Принцип работы
 
-### Сценарий 1: Ollama включен + Reranking включен
+### Шаг 1: Индексация документа (если еще не проиндексирован)
 
-1. Пользователь включает Ollama и Reranking в настройках
-2. Пользователь выбирает документ для поиска (если несколько документов проиндексировано)
-3. Пользователь устанавливает коэффициент похожести (можно ввести любое значение 0-100, по умолчанию 50%)
-4. Пользователь отправляет вопрос в AI chat
-5. Выполняется векторный поиск:
-   - **Определяется выбранный документ:** если пользователь выбрал документ через "Select File", поиск выполняется только в этом документе
-   - Если документ не выбран, поиск выполняется во всех проиндексированных документах
-   - Вопрос конвертируется в embedding через Ollama (`nomic-embed-text`)
-   - Выполняется поиск похожих векторов (cosine similarity)
-   - Находится до 10 наиболее релевантных chunks
-6. Применяется фильтрация (reranking):
-   - Коэффициент похожести конвертируется из процентов в Float (50% = 0.5f)
-   - Фильтруются chunks: `similarity >= threshold`
-   - Остаются только chunks с similarity >= порога
-7. Выбираются топ-3 chunks после фильтрации
-8. Контекст из chunks передается в AI chat
-9. AI chat формирует ответ и summary для chunks
-10. В конце ответа добавляется фраза: **"С Ollama и фильтрацией"**
+1. Пользователь выбирает файл для индексации
+2. Файл разбивается на чанки (500-700 токенов каждый)
+3. Для каждого чанка генерируется embedding через Ollama API (`nomic-embed-text`)
+4. Embeddings нормализуются к диапазону [0,1]
+5. Данные сохраняются в JSON файл (`vector_index.json`)
 
-### Сценарий 2: Ollama включен + Reranking выключен
+### Шаг 2: Поиск кандидатов (Retrieval)
 
-1. Пользователь включает Ollama, но выключает Reranking
-2. Пользователь выбирает документ для поиска (если несколько документов проиндексировано)
-3. Пользователь отправляет вопрос в AI chat
-4. Выполняется векторный поиск:
-   - Если выбран документ, поиск выполняется только в этом документе
-   - Если документ не выбран, поиск выполняется во всех проиндексированных документах
-   - Находится до 10 chunks
-5. Фильтрация не применяется - используются все найденные chunks
-6. Выбираются топ-3 chunks
-7. Контекст передается в AI chat
-8. AI chat формирует ответ
-9. В конце ответа добавляется фраза: **"С Ollama и без фильтрацией"**
+1. Пользователь отправляет запрос в AI chat
+2. Запрос конвертируется в embedding через Ollama API (`nomic-embed-text`)
+3. Выполняется поиск похожих векторов (cosine similarity) в индексе
+4. Находится до 10 наиболее релевантных чанков-кандидатов
+5. Если выбран документ, поиск выполняется только в этом документе
 
-### Сценарий 3: Ollama выключен
+### Шаг 3: Reranking через LLM (если включен)
 
-1. Пользователь выключает Ollama
-2. AI chat формирует ответ самостоятельно
-3. В конце ответа добавляется фраза "Без Ollama"
+1. Для каждого чанка-кандидата формируется промпт:
+   ```
+   Оцени релевантность текста запросу по шкале от 0.0 до 1.0.
+   Запрос: "[запрос пользователя]"
+   Текст: "[текст чанка (до 1000 символов)]"
+   Ответь текст + релевантность текста в виде "Релевантность число". Никаких пояснений.
+   ```
+
+2. Промпт отправляется в Ollama API с моделью `phi3:medium`
+3. LLM возвращает оценку релевантности (0.0-1.0)
+4. Оценка парсится из ответа LLM
+5. Все чанки сортируются по оценке релевантности по убыванию (1.0 = максимальная релевантность)
+6. Выбираются топ-3 чанка с наивысшей оценкой
+
+### Шаг 4: Генерация ответа
+
+1. Контекст из топ-3 чанков передается в AI chat (выбранная модель)
+2. AI chat формирует ответ на основе контекста
+3. AI chat создает summary для каждого чанка
+4. В конце ответа добавляется:
+   - "С Ollama и фильтрацией" - если reranking включен
+   - "С Ollama и без фильтрацией" - если reranking выключен
 
 ## Как запустить и проверить работоспособность
 
@@ -121,11 +109,12 @@
 # Установка и запуск Ollama
 ./setup-ollama.sh
 
+# Убедитесь, что установлены обе модели:
+ollama pull nomic-embed-text  # Для embeddings
+ollama pull phi3:medium       # Для reranking
+
 # Проверка подключения
 ./test-ollama-connection.sh
-
-# Убедитесь, что установлена модель для embeddings
-ollama pull nomic-embed-text
 ```
 
 ### Шаг 2: Запуск приложения
@@ -146,51 +135,48 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 4. Выберите файл для индексации (кнопка "Select File")
 5. Дождитесь завершения индексации
 6. **Включите "Reranking (Filtering)"** (switcher)
-7. **Укажите коэффициент похожести:**
-   - В поле "Threshold (0-100)" можно ввести любое значение от 0 до 100
-   - По умолчанию: 50
-   - Значение сохраняется при вводе валидного числа
-   - Можно вводить числа вручную (например, 75, 30, 90)
 
 ### Шаг 4: Проверка сценария 1 (Ollama + Reranking включены)
 
 1. Убедитесь, что оба switcher'а включены (Ollama и Reranking)
-2. **Выберите документ** (если несколько документов проиндексировано) - проверьте, что выбран нужный файл
-3. **Укажите коэффициент похожести** (например, введите 50 или любое другое значение 0-100)
-4. Задайте вопрос, связанный с содержимым проиндексированного файла
-5. Проверьте ответ:
+2. Выберите документ (если несколько документов проиндексировано)
+3. Задайте вопрос, связанный с содержимым проиндексированного файла
+4. Проверьте ответ:
    - Должен быть ответ от AI chat
    - В конце должны быть указаны номера chunks и их summary
    - В конце ответа должна быть фраза **"С Ollama и фильтрацией"**
-   - Chunks должны быть отфильтрованы по порогу похожести
-   - Поиск должен выполняться только в выбранном документе (если документ был выбран)
+   - Chunks должны быть отранжированы по релевантности через LLM
 
 **Проверка в логах:**
 ```bash
-adb logcat | grep -E "ChatViewModel.*reranking|Reranking"
+adb logcat | grep -E "ChatViewModel.*reranking|Reranking|LLM"
 ```
 
 Ожидаемые логи:
 ```
-Reranking enabled: filtered N chunks to M (threshold: 50% = 0.5)
+🔄 Reranking enabled: using LLM-as-a-reranker (phi3:medium) for N candidate chunks
+🔄 Starting LLM reranking for N candidate chunks
+Evaluating relevance for chunk 1/N (chunk #X)
+✅ Chunk 1: relevance score = 0.85 (chunk #X)
+📊 Reranking completed. Top 3 scores: [Chunk #X=0.85, Chunk #Y=0.78, Chunk #Z=0.72]
+📌 Selected top 3 chunks: [#X (score=0.85), #Y (score=0.78), #Z (score=0.72)]
 Using RAG with Ollama (vector search), 3 matched chunks (after reranking)
 ```
 
 ### Шаг 5: Проверка сценария 2 (Ollama включен, Reranking выключен)
 
 1. Включите Ollama, но выключите Reranking
-2. **Выберите документ** (если нужно ограничить поиск конкретным документом)
+2. Выберите документ (если нужно)
 3. Задайте вопрос
 4. Проверьте ответ:
    - Должен быть ответ от AI chat
    - В конце должна быть фраза **"С Ollama и без фильтрацией"**
-   - Используются все найденные chunks без фильтрации
-   - Поиск выполняется только в выбранном документе (если документ был выбран)
+   - Используются все найденные chunks без reranking (только по косинусному сходству)
 
 **Проверка в логах:**
 ```
-Reranking disabled: using all N matched chunks
-Using RAG with Ollama (vector search), 3 matched chunks (БЕЗ ФИЛЬТРАЦИИ)
+⏭️ Reranking disabled: using top N matched chunks by cosine similarity
+Using RAG with Ollama (vector search), 3 matched chunks (without reranking)
 ```
 
 ### Шаг 6: Проверка сценария 3 (Ollama выключен)
@@ -199,45 +185,50 @@ Using RAG with Ollama (vector search), 3 matched chunks (БЕЗ ФИЛЬТРАЦ
 2. Задайте любой вопрос
 3. Проверьте ответ:
    - Должен быть ответ от выбранной AI модели
-   - В конце должна быть фраза "Без Ollama"
-
-### Шаг 7: Проверка изменения коэффициента похожести
-
-1. Включите Ollama и Reranking
-2. Установите коэффициент 70 (более строгая фильтрация)
-3. Задайте вопрос
-4. Проверьте, что используется меньше chunks (только с similarity >= 0.7)
-5. Установите коэффициент 30 (менее строгая фильтрация)
-6. Задайте тот же вопрос
-7. Проверьте, что используется больше chunks (с similarity >= 0.3)
-
-### Шаг 8: Проверка сохранения состояния
-
-1. Включите Ollama и Reranking
-2. Установите коэффициент похожести (например, 60)
-3. Закройте приложение
-4. Откройте приложение снова
-5. Проверьте, что:
-   - Ollama включен
-   - Reranking включен
-   - Коэффициент похожести = 60
+   - В конце должна быть фраза **"Без Ollama"**
 
 ## Решение проблем
 
-### Проблема: "No chunks found above similarity threshold"
+### Проблема: "phi3:medium model not found"
 
 **Решение:**
-1. Снизьте коэффициент похожести (например, с 70 до 50 или 30)
-2. Проверьте, что файл был правильно проиндексирован
-3. Задайте вопрос, более связанный с содержимым файла
+1. Установите модель: `ollama pull phi3:medium`
+2. Проверьте установку: `ollama list | grep phi3`
+3. Перезапустите Ollama сервер: `ollama serve`
 
 ### Проблема: Reranking не работает (используются все chunks)
 
 **Решение:**
 1. Проверьте, что switcher Reranking включен
 2. Проверьте логи на наличие сообщений о reranking
-3. Убедитесь, что коэффициент похожести указан правильно (0-100)
-4. Проверьте, что значение сохранилось после ввода (введите число и проверьте, что оно отображается)
+3. Убедитесь, что модель phi3:medium установлена
+4. Проверьте, что Ollama сервер доступен
+
+### Проблема: Не удается распарсить оценку релевантности
+
+**Решение:**
+1. Проверьте логи на ответы от LLM
+2. Убедитесь, что модель phi3:medium правильно отвечает на промпт
+3. При ошибке парсинга используется среднее значение (0.5)
+4. Проверьте формат ответа LLM в логах
+
+### Проблема: Reranking работает медленно
+
+**Решение:**
+1. Reranking требует запросов к LLM для каждого кандидата (до 10 запросов)
+2. Это нормально - reranking улучшает качество, но требует времени
+3. Можно уменьшить количество кандидатов (сейчас до 10)
+
+### Проблема: Поиск выполняется во всех документах, а не в выбранном
+
+**Решение:**
+1. Проверьте, что документ выбран (должно отображаться "Selected: [имя файла]" в UI)
+2. Убедитесь, что выбранный файл был проиндексирован
+3. Проверьте логи на наличие сообщения "Searching in N document(s) (selected: [имя файла])"
+4. Если документ не находится, проверьте:
+   - Совпадает ли имя файла (сравнение без учета регистра)
+   - Был ли файл проиндексирован после выбора
+   - Сохранился ли выбранный файл между сессиями (проверьте PreferencesManager)
 
 ### Проблема: Интернет не работает на эмуляторе при включенном Ollama
 
@@ -284,62 +275,39 @@ Using RAG with Ollama (vector search), 3 matched chunks (БЕЗ ФИЛЬТРАЦ
    - Текст длиннее 3000 символов → разбивается на чанки по ~3000 символов с перекрытием ~300 символов
    - Пустые чанки автоматически пропускаются
 
-### Проблема: Поиск выполняется во всех документах, а не в выбранном
-
-**Решение:**
-1. Проверьте, что документ выбран (должно отображаться "Selected: [имя файла]" в UI)
-2. Убедитесь, что выбранный файл был проиндексирован
-3. Проверьте логи на наличие сообщений:
-   ```
-   Selected file path: [путь]
-   Selected file name: [имя файла]
-   Available documents in index: [список документов]
-   Filtered documents for '[имя файла]': N found
-   Searching in N document(s) (selected: [имя файла])
-   ```
-4. Если документ не находится, проверьте:
-   - Совпадает ли имя файла (сравнение без учета регистра)
-   - Был ли файл проиндексирован после выбора
-   - Сохранился ли выбранный файл между сессиями (проверьте PreferencesManager)
-5. Если проблема сохраняется, проверьте логи на наличие предупреждения:
-   ```
-   ⚠️ No documents found for selected file '[имя файла]'. Available: [список]
-   ```
-
-### Проблема: Состояние reranking не сохраняется
-
-**Решение:**
-1. Проверьте, что PreferencesManager правильно сохраняет значения
-2. Проверьте логи на наличие ошибок при сохранении
-3. Убедитесь, что `loadRerankingState()` вызывается в `init` ChatViewModel
-
-### Проблема: Коэффициент похожести не применяется
-
-**Решение:**
-1. Проверьте, что значение в диапазоне 0-100
-2. Проверьте логи на конвертацию процентов в Float
-3. Убедитесь, что фильтрация выполняется: `similarity >= threshold`
-
 ## Технические детали
 
-### Формула фильтрации
+### Модели
 
-```kotlin
-val thresholdFloat = similarityThreshold / 100f  // 50% = 0.5f
-val filteredChunks = allMatchedChunks.filter { it.similarity >= thresholdFloat }
-```
+- **nomic-embed-text**: Используется для генерации embeddings (индексация и поиск)
+- **phi3:medium**: Используется для reranking (оценка релевантности)
 
 ### Параметры поиска
 
-- **Максимум chunks для поиска:** 10 (до фильтрации)
-- **Используется после фильтрации:** топ-3 chunks
-- **Диапазон коэффициента похожести:** 0-100 (проценты)
-- **Диапазон similarity:** 0.0-1.0 (Float)
+- **Максимум кандидатов для reranking:** 10
+- **Используется после reranking:** топ-3 chunks
+- **Диапазон оценки релевантности:** 0.0-1.0 (Float)
+- **Сортировка:** по убыванию (1.0 = максимальная релевантность)
+
+### Формат промпта для reranking
+
+```
+Оцени релевантность текста запросу по шкале от 0.0 до 1.0.
+Запрос: "[запрос пользователя]"
+Текст: "[текст чанка (до 1000 символов)]"
+Ответь текст + релевантность текста в виде "Релевантность число". Никаких пояснений.
+```
+
+### Парсинг ответа LLM
+
+1. Ищется паттерн "Релевантность число"
+2. Если не найден, ищется любое число от 0.0 до 1.0
+3. Если не удалось распарсить, используется 0.5 (среднее значение)
 
 ### Формат ответа с reranking
 
 ```
-[Ответ от AI chat на основе отфильтрованных chunks]
+[Ответ от AI chat на основе отранжированных chunks]
 
 ---
 📚 Источники (chunks):
@@ -373,22 +341,22 @@ val filteredChunks = allMatchedChunks.filter { it.similarity >= thresholdFloat }
 
 ## Файлы, которые были изменены/созданы
 
-1. `core/common/src/main/java/com/example/aiagentchat/core/common/preferences/PreferencesManager.kt` - добавлены поля reranking
-2. `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/chat/ChatUiState.kt` - добавлены поля и действия
-3. `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/chat/ChatViewModel.kt` - добавлена логика reranking
-4. `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/components/ToolsDialog.kt` - добавлен UI для reranking
-5. `feature/home/src/main/java/com/example/aiagentchat/feature/home/presentation/HomeScreen.kt` - подключены параметры reranking
-6. `README.md` - обновлена документация
-7. `18HW_RAG_REQUEST_WITH_RERANKING_FLOW.md` - этот файл с описанием реализации
+1. `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/chat/ChatViewModel.kt` - добавлен LLM reranking
+2. `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/data/api/OllamaApi.kt` - добавлена константа для модели reranking
+3. `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/components/ToolsDialog.kt` - упрощен UI
+4. `feature/chat/src/main/java/com/example/aiagentchat/feature/chat/presentation/chat/ChatUiState.kt` - убрано поле коэффициента
+5. `core/common/src/main/java/com/example/aiagentchat/core/common/preferences/PreferencesManager.kt` - добавлено поле `ollamaSelectedFile`, убрано поле коэффициента
+6. `feature/home/src/main/java/com/example/aiagentchat/feature/home/presentation/HomeScreen.kt` - убраны параметры коэффициента
+7. `README.md` - обновлена документация
+8. `18HW_RAG_REQUEST_WITH_RERANKING_FLOW.md` - этот файл с описанием реализации
 
 ## Заключение
 
-Реализован полноценный функционал reranking для фильтрации chunks по коэффициенту похожести:
+Реализован полноценный функционал RAG с LLM-as-a-Reranker:
 
-- **С reranking:** chunks фильтруются по порогу похожести, используются только релевантные
-- **Без reranking:** используются все найденные chunks, добавляется "БЕЗ ФИЛЬТРАЦИИ"
-- **Состояние сохраняется** между сессиями через SharedPreferences
-- **Коэффициент настраивается** пользователем (0-100, по умолчанию 50)
+- **Retrieval:** Поиск кандидатов через embeddings (nomic-embed-text)
+- **Reranking:** Оценка релевантности через LLM (phi3:medium) для каждого кандидата
+- **Selection:** Выбор топ-3 самых релевантных чанков (отсортированы по убыванию, где 1.0 = максимальная релевантность)
+- **Generation:** Генерация ответа через AI chat с контекстом из топ-3 чанков
 
 Функционал протестирован, компиляция проходит успешно, все зависимости корректно настроены.
-
