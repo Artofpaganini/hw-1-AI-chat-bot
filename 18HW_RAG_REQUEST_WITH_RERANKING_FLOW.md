@@ -95,9 +95,13 @@
 ### Шаг 4: Генерация ответа
 
 1. Контекст из топ-3 чанков передается в AI chat (выбранная модель)
-2. AI chat формирует ответ на основе контекста
-3. AI chat создает summary для каждого чанка
-4. В конце ответа добавляется:
+2. В контексте для каждого чанка указывается:
+   - Если reranking включен: оценка релевантности (0.0-1.0 и процент)
+   - Если reranking выключен: оценка похожести (0.0-1.0 и процент)
+3. AI chat формирует ответ на основе контекста
+4. AI chat создает summary для каждого чанка
+5. В ответе AI chat включает оценку релевантности для каждого чанка (если reranking включен)
+6. В конце ответа добавляется:
    - "С Ollama и фильтрацией" - если reranking включен
    - "С Ollama и без фильтрацией" - если reranking выключен
 
@@ -143,7 +147,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 3. Задайте вопрос, связанный с содержимым проиндексированного файла
 4. Проверьте ответ:
    - Должен быть ответ от AI chat
-   - В конце должны быть указаны номера chunks и их summary
+   - В конце должны быть указаны номера chunks, их оценка релевантности и summary
+   - Формат: `Chunk #N (Релевантность: X.XX): [summary]`
    - В конце ответа должна быть фраза **"С Ollama и фильтрацией"**
    - Chunks должны быть отранжированы по релевантности через LLM
 
@@ -161,6 +166,22 @@ Evaluating relevance for chunk 1/N (chunk #X)
 📊 Reranking completed. Top 3 scores: [Chunk #X=0.85, Chunk #Y=0.78, Chunk #Z=0.72]
 📌 Selected top 3 chunks: [#X (score=0.85), #Y (score=0.78), #Z (score=0.72)]
 Using RAG with Ollama (vector search), 3 matched chunks (after reranking)
+Chunk #X: relevance score = 0.85 (85%)
+Chunk #Y: relevance score = 0.78 (78%)
+Chunk #Z: relevance score = 0.72 (72%)
+```
+
+**Ожидаемый формат ответа:**
+```
+[Ответ от AI chat]
+
+---
+📚 Источники (chunks):
+  • Chunk #X (Релевантность: 0.85): [summary chunk'а X]
+  • Chunk #Y (Релевантность: 0.78): [summary chunk'а Y]
+  • Chunk #Z (Релевантность: 0.72): [summary chunk'а Z]
+---
+С Ollama и фильтрацией
 ```
 
 ### Шаг 5: Проверка сценария 2 (Ollama включен, Reranking выключен)
@@ -311,11 +332,13 @@ Using RAG with Ollama (vector search), 3 matched chunks (without reranking)
 
 ---
 📚 Источники (chunks):
-  • Chunk #N: [summary chunk'а N]
-  • Chunk #M: [summary chunk'а M]
+  • Chunk #N (Релевантность: X.XX): [summary chunk'а N]
+  • Chunk #M (Релевантность: Y.YY): [summary chunk'а M]
 ---
 С Ollama и фильтрацией
 ```
+
+**Важно:** В ответе отображается оценка релевантности (0.0-1.0) для каждого чанка, полученная от reranking model (phi3:medium).
 
 ### Формат ответа без reranking
 

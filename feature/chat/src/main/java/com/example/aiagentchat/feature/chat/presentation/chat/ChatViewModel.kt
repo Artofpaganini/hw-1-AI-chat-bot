@@ -300,8 +300,26 @@ class ChatViewModel(
             
             android.util.Log.d("ChatViewModel", "Using RAG with Ollama (vector search), ${matchedChunks.size} matched chunks${if (rerankingEnabled) " (after reranking)" else " (without reranking)"}")
             
+            // Логируем оценки релевантности для каждого чанка
+            matchedChunks.forEachIndexed { index, chunk ->
+                val scorePercent = (chunk.similarity * 100).toInt()
+                if (rerankingEnabled) {
+                    android.util.Log.d("ChatViewModel", "Chunk #${chunk.chunkIndex}: relevance score = ${chunk.similarity} ($scorePercent%)")
+                } else {
+                    android.util.Log.d("ChatViewModel", "Chunk #${chunk.chunkIndex}: similarity score = ${chunk.similarity} ($scorePercent%)")
+                }
+            }
+            
+            // Формируем контекст с информацией о релевантности каждого чанка
             val contextText = matchedChunks.joinToString("\n\n---\n\n") { chunk ->
-                "Chunk #${chunk.chunkIndex}:\n${chunk.text}"
+                val relevanceInfo = if (rerankingEnabled) {
+                    val relevancePercent = (chunk.similarity * 100).toInt()
+                    "Chunk #${chunk.chunkIndex} (Релевантность: ${chunk.similarity} / ${relevancePercent}%):\n${chunk.text}"
+                } else {
+                    val similarityPercent = (chunk.similarity * 100).toInt()
+                    "Chunk #${chunk.chunkIndex} (Похожесть: ${chunk.similarity} / ${similarityPercent}%):\n${chunk.text}"
+                }
+                relevanceInfo
             }
             
             val enhancedPrompt = buildString {
@@ -315,18 +333,34 @@ class ChatViewModel(
                 appendLine(currentInput)
                 appendLine("=== END OF QUESTION ===")
                 appendLine()
-                appendLine("IMPORTANT: After your answer, please provide:")
-                appendLine("1. A list of chunk numbers that were used to answer the question")
-                appendLine("2. A brief summary (1-2 sentences) for each chunk about what information it contained")
-                appendLine()
-                appendLine("Format your response as follows:")
-                appendLine("[Your answer to the question]")
-                appendLine()
-                appendLine("---")
-                appendLine("📚 Источники (chunks):")
-                appendLine("  • Chunk #N: [brief summary]")
-                appendLine("  • Chunk #M: [brief summary]")
-                appendLine("---")
+                if (rerankingEnabled) {
+                    appendLine("IMPORTANT: After your answer, please provide:")
+                    appendLine("1. A list of chunk numbers that were used to answer the question")
+                    appendLine("2. The relevance score (релевантность) for each chunk (shown in the context above)")
+                    appendLine("3. A brief summary (1-2 sentences) for each chunk about what information it contained")
+                    appendLine()
+                    appendLine("Format your response as follows:")
+                    appendLine("[Your answer to the question]")
+                    appendLine()
+                    appendLine("---")
+                    appendLine("📚 Источники (chunks):")
+                    appendLine("  • Chunk #N (Релевантность: X.XX): [brief summary]")
+                    appendLine("  • Chunk #M (Релевантность: Y.YY): [brief summary]")
+                    appendLine("---")
+                } else {
+                    appendLine("IMPORTANT: After your answer, please provide:")
+                    appendLine("1. A list of chunk numbers that were used to answer the question")
+                    appendLine("2. A brief summary (1-2 sentences) for each chunk about what information it contained")
+                    appendLine()
+                    appendLine("Format your response as follows:")
+                    appendLine("[Your answer to the question]")
+                    appendLine()
+                    appendLine("---")
+                    appendLine("📚 Источники (chunks):")
+                    appendLine("  • Chunk #N: [brief summary]")
+                    appendLine("  • Chunk #M: [brief summary]")
+                    appendLine("---")
+                }
             }
             
             val messagesWithContext = listOf(
