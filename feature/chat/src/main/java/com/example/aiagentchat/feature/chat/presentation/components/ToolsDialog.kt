@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,33 +39,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
-import com.example.aiagentchat.feature.chat.domain.model.McpTool
-import com.example.aiagentchat.feature.chat.domain.model.McpServer
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ToolsDialog(
-    tools: List<McpTool>,
-    enabledTools: Set<String>,
-    onToolToggle: (String, Boolean) -> Unit,
     onDismiss: () -> Unit,
-    weatherNotificationsEnabled: Boolean = false,
-    onWeatherNotificationsToggle: (Boolean) -> Unit = {},
-    testModeEnabled: Boolean = false,
-    onTestModeToggle: (Boolean) -> Unit = {},
-    remoteControlEnabled: Boolean = false,
-    onRemoteControlToggle: (Boolean) -> Unit = {},
-    remoteControlDeviceId: String? = null,
-    onRemoteControlDeviceIdChange: (String?) -> Unit = {},
     ollamaEnabled: Boolean = false,
     onOllamaToggle: (Boolean) -> Unit = {},
-    ollamaSelectedFile: String? = null,
+    ollamaSelectedFiles: List<String> = emptyList(),
     onOllamaSelectFile: () -> Unit = {},
+    onOllamaRemoveFile: (String) -> Unit = {},
     rerankingEnabled: Boolean = false,
-    onRerankingToggle: (Boolean) -> Unit = {},
-    mcpServers: List<McpServer> = emptyList(),
-    enabledMcpServerTools: Map<String, Set<String>> = emptyMap(),
-    onServerToolToggle: (String, String, Boolean) -> Unit = { _, _, _ -> }
+    onRerankingToggle: (Boolean) -> Unit = {}
 ) {
     BasicAlertDialog(
         onDismissRequest = onDismiss,
@@ -116,228 +102,17 @@ fun ToolsDialog(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     item {
-                        WeatherNotificationItem(
-                            enabled = weatherNotificationsEnabled,
-                            onToggle = onWeatherNotificationsToggle
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 8.dp),
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                        )
-                        TestModeItem(
-                            enabled = testModeEnabled,
-                            onToggle = onTestModeToggle
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 8.dp),
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                        )
-                        RemoteControlItem(
-                            enabled = remoteControlEnabled,
-                            onToggle = onRemoteControlToggle,
-                            deviceId = remoteControlDeviceId,
-                            onDeviceIdChange = onRemoteControlDeviceIdChange
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 8.dp),
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                        )
                         OllamaItem(
                             enabled = ollamaEnabled,
                             onToggle = onOllamaToggle,
-                            selectedFile = ollamaSelectedFile,
+                            selectedFiles = ollamaSelectedFiles,
+                            onRemoveFile = onOllamaRemoveFile,
                             onSelectFile = onOllamaSelectFile,
                             rerankingEnabled = rerankingEnabled,
                             onRerankingToggle = onRerankingToggle
                         )
-                        if (mcpServers.isNotEmpty()) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(vertical = 8.dp),
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                            )
-                        }
-                    }
-                    
-                    // Display MCP Servers with their tools
-                    items(mcpServers, key = { it.id }) { server ->
-                        McpServerItem(
-                            server = server,
-                            enabledTools = enabledMcpServerTools[server.id] ?: emptySet(),
-                            onToolToggle = { toolName, enabled ->
-                                onServerToolToggle(server.id, toolName, enabled)
-                            }
-                        )
-                        if (server != mcpServers.last()) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(vertical = 8.dp),
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                            )
-                        }
-                    }
-                    
-                    // Legacy: Display old tools if any
-                    if (tools.isNotEmpty() && mcpServers.isEmpty()) {
-                        item {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(vertical = 8.dp),
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                            )
-                        }
-                        items(tools, key = { it.name }) { tool ->
-                            McpToolItem(
-                                tool = tool,
-                                enabled = enabledTools.contains(tool.name),
-                                onToggle = { enabled ->
-                                    onToolToggle(tool.name, enabled)
-                                }
-                            )
-                            if (tool != tools.last()) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(vertical = 4.dp),
-                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                                )
-                            }
-                        }
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun McpToolItem(
-    tool: McpTool,
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit
-) {
-    Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        text = tool.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    tool.description?.let { description ->
-                        Text(
-                            text = description,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                }
-                Switch(
-                    checked = enabled,
-                    onCheckedChange = onToggle
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun WeatherNotificationItem(
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit
-) {
-    Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        text = "Weather Notifications",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Get weather updates every 10 minutes based on your last query",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-                Switch(
-                    checked = enabled,
-                    onCheckedChange = onToggle
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TestModeItem(
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit
-) {
-    Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        text = "Test Mode",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Use Foreground Service for testing (notifications every 1 minute, works when app is in background)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-                Switch(
-                    checked = enabled,
-                    onCheckedChange = onToggle
-                )
             }
         }
     }
@@ -347,8 +122,9 @@ private fun TestModeItem(
 private fun OllamaItem(
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
-    selectedFile: String? = null,
+    selectedFiles: List<String> = emptyList(),
     onSelectFile: () -> Unit = {},
+    onRemoveFile: (String) -> Unit = {},
     rerankingEnabled: Boolean = false,
     onRerankingToggle: (Boolean) -> Unit = {}
 ) {
@@ -397,14 +173,14 @@ private fun OllamaItem(
                 
                 Column {
                     Text(
-                        text = "Document File",
+                        text = "Document Files (up to 5)",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                     Text(
-                        text = "Select a file (.md, .txt, or .pdf) to index for vector search.",
+                        text = "Select files (.md, .txt, or .pdf) to index for vector search. Maximum 5 files.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp)
@@ -412,19 +188,46 @@ private fun OllamaItem(
                     
                     androidx.compose.material3.Button(
                         onClick = onSelectFile,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = selectedFiles.size < 5
                     ) {
-                        Text(if (selectedFile != null) "Change File" else "Select File")
+                        Text(if (selectedFiles.size < 5) "Add File (${selectedFiles.size}/5)" else "Maximum 5 files reached")
                     }
                     
-                    selectedFile?.let { filePath ->
+                    if (selectedFiles.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Selected: ${java.io.File(filePath).name}",
+                            text = "Selected Files (${selectedFiles.size}/5):",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(bottom = 4.dp)
                         )
+                        selectedFiles.forEach { filePath ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "• ${java.io.File(filePath).name}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                androidx.compose.material3.IconButton(
+                                    onClick = { onRemoveFile(filePath) }
+                                ) {
+                                    androidx.compose.material3.Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Remove file",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
                 
@@ -476,171 +279,4 @@ private fun OllamaItem(
     }
 }
 
-@Composable
-private fun RemoteControlItem(
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit,
-    deviceId: String?,
-    onDeviceIdChange: (String?) -> Unit
-) {
-    Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        text = "Remote Device Control",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Enable remote control for managing connected Android devices/emulators via ADB commands (Home, Back, open apps, screenshots, etc.)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-                Switch(
-                    checked = enabled,
-                    onCheckedChange = onToggle
-                )
-            }
-            
-            if (enabled) {
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 12.dp),
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                )
-                
-                Column {
-                    Text(
-                        text = "Device ID (optional)",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    Text(
-                        text = "Specify device ID for remote control. Leave empty to use default device. Use 'list_devices' tool to see available devices.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    OutlinedTextField(
-                        value = deviceId ?: "",
-                        onValueChange = { onDeviceIdChange(it.takeIf { it.isNotBlank() }) },
-                        label = { Text("Device ID (e.g., emulator-5554)") },
-                        placeholder = { Text("Leave empty for default device") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = TextFieldDefaults.colors(
-                            focusedIndicatorColor = MaterialTheme.colorScheme.primary,
-                            unfocusedIndicatorColor = MaterialTheme.colorScheme.outline
-                        )
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun McpServerItem(
-    server: McpServer,
-    enabledTools: Set<String>,
-    onToolToggle: (String, Boolean) -> Unit
-) {
-    Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp)
-        ) {
-            Text(
-                text = server.name,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = "${server.getFullUrl()}/mcp",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-            
-            if (server.tools.isEmpty()) {
-                Text(
-                    text = "No tools available",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            } else {
-                Column(
-                    modifier = Modifier.padding(top = 8.dp)
-                ) {
-                    server.tools.forEach { tool ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    text = tool.name,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                tool.description?.let { description ->
-                                    Text(
-                                        text = description,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(top = 2.dp)
-                                    )
-                                }
-                            }
-                            Switch(
-                                checked = enabledTools.contains(tool.name),
-                                onCheckedChange = { enabled ->
-                                    onToolToggle(tool.name, enabled)
-                                }
-                            )
-                        }
-                        if (tool != server.tools.last()) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(vertical = 4.dp),
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 

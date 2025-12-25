@@ -149,3 +149,4 @@ D/ChatViewModel: Sending message - Ollama: true, MCP tools: 0, MCP servers: 0
 3. **Оба выключены** → используется обычный контекст из истории чата
 
 
+

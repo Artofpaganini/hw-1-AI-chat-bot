@@ -1,18 +1,13 @@
 package com.example.aiagentchat.feature.chat.presentation.chat
 
-import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.aiagentchat.feature.chat.data.service.WeatherNotificationService
 import com.example.aiagentchat.feature.chat.domain.model.AiModel
 import com.example.aiagentchat.feature.chat.domain.model.ContextSummary
 import com.example.aiagentchat.feature.chat.domain.model.Message
 import com.example.aiagentchat.feature.chat.domain.model.SessionContext
 import com.example.aiagentchat.feature.chat.domain.repository.AiModelRepository
 import com.example.aiagentchat.feature.chat.domain.repository.ChatRepository
-import com.example.aiagentchat.feature.chat.domain.repository.McpRepository
-import com.example.aiagentchat.feature.chat.domain.repository.MultiMcpRepository
-import com.example.aiagentchat.feature.chat.domain.model.McpServer
 import com.example.aiagentchat.feature.chat.domain.usecase.CompareModelMetricsUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.CompressionScheduler
 import com.example.aiagentchat.feature.chat.domain.usecase.ContextInitializer
@@ -21,9 +16,8 @@ import com.example.aiagentchat.feature.chat.domain.usecase.SendMessageUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.SwitchAiModelUseCase
 import com.example.aiagentchat.feature.chat.data.api.ChatMessageDto
 import com.example.aiagentchat.feature.chat.data.service.TextIndexingService
-import com.example.aiagentchat.feature.chat.data.service.VectorJsonService
-import com.example.aiagentchat.feature.chat.data.service.VectorChunk
-import com.example.aiagentchat.feature.chat.data.service.MatchedChunk
+import com.example.aiagentchat.feature.chat.data.service.VectorDatabaseService
+import com.example.aiagentchat.feature.chat.data.service.MatchedChunkWithBook
 import com.example.aiagentchat.feature.chat.data.api.OllamaApi
 import android.os.Environment
 import java.io.File
@@ -48,12 +42,9 @@ class ChatViewModel(
     private val chatRepository: ChatRepository,
     private val compressionScheduler: CompressionScheduler,
     private val contextInitializer: ContextInitializer,
-    private val mcpRepository: McpRepository,
-    private val multiMcpRepository: MultiMcpRepository,
     private val preferencesManager: com.example.aiagentchat.core.common.preferences.PreferencesManager,
-    private val weatherWorkManager: com.example.aiagentchat.feature.chat.data.worker.WeatherWorkManager,
     private val textIndexingService: TextIndexingService,
-    private val vectorJsonService: VectorJsonService,
+    private val vectorDatabaseService: com.example.aiagentchat.feature.chat.data.service.VectorDatabaseService,
     private val ollamaApi: OllamaApi
 ) : ViewModel() {
 
@@ -71,14 +62,6 @@ class ChatViewModel(
         loadMessages()
         loadSessionContext()
         observeContextSummaries()
-        observeMcpTools()
-        observeMcpServers()
-        loadWeatherNotificationsState()
-        loadEnabledMcpTools()
-        loadEnabledMcpServerTools()
-        loadTestModeState()
-        loadRemoteControlState()
-        loadRemoteControlDeviceId()
         loadOllamaState()
         loadRerankingState()
     }
@@ -95,14 +78,9 @@ class ChatViewModel(
             is ChatAction.CheckMessageThreshold -> handleCheckMessageThreshold(action.message)
             is ChatAction.ShowMcpTools -> handleShowMcpTools()
             is ChatAction.DismissMcpTools -> handleDismissMcpTools()
-            is ChatAction.ToggleMcpTool -> handleToggleMcpTool(action.toolName, action.enabled)
-            is ChatAction.ToggleMcpServerTool -> handleToggleMcpServerTool(action.serverId, action.toolName, action.enabled)
-            is ChatAction.ToggleWeatherNotifications -> handleToggleWeatherNotifications(action.enabled)
-            is ChatAction.ToggleTestMode -> handleToggleTestMode(action.enabled)
-            is ChatAction.ToggleRemoteControl -> handleToggleRemoteControl(action.enabled)
-            is ChatAction.SetRemoteControlDeviceId -> handleSetRemoteControlDeviceId(action.deviceId)
             is ChatAction.ToggleOllama -> handleToggleOllama(action.enabled)
             is ChatAction.SelectOllamaFile -> handleSelectOllamaFile(action.filePath)
+            is ChatAction.RemoveOllamaFile -> handleRemoveOllamaFile(action.filePath)
             is ChatAction.ToggleReranking -> handleToggleReranking(action.enabled)
             is ChatAction.ExportJson -> handleExportJson()
             is ChatAction.DismissJsonExport -> handleDismissJsonExport()
@@ -204,41 +182,11 @@ class ChatViewModel(
 
     private suspend fun handleSendMessageWithOllama(currentInput: String, userMessage: Message) {
         try {
-            val index = vectorJsonService.loadVectorIndex()
-            val selectedFilePath = _uiState.value.ollamaSelectedFile
-            val selectedFileName = selectedFilePath?.let { 
-                val fileName = java.io.File(it).name
-                android.util.Log.d("ChatViewModel", "Extracted file name from path '$it': '$fileName'")
-                fileName
-            }
+            // Получаем список всех проиндексированных книг
+            val allBooks = vectorDatabaseService.getAllBooksSync()
             
-            android.util.Log.d("ChatViewModel", "Selected file path: $selectedFilePath")
-            android.util.Log.d("ChatViewModel", "Selected file name: $selectedFileName")
-            android.util.Log.d("ChatViewModel", "Total documents in index: ${index.documents.size}")
-            android.util.Log.d("ChatViewModel", "Available documents in index: ${index.documents.map { it.fileName }}")
-            
-            val documentsToSearch = if (selectedFileName != null && selectedFileName.isNotBlank()) {
-                val filtered = index.documents.filter { 
-                    val matches = it.fileName.equals(selectedFileName, ignoreCase = true)
-                    android.util.Log.d("ChatViewModel", "Comparing: '${it.fileName}' == '$selectedFileName' -> $matches")
-                    matches
-                }
-                android.util.Log.d("ChatViewModel", "Filtered documents for '$selectedFileName': ${filtered.size} found - ${filtered.map { it.fileName }}")
-                if (filtered.isEmpty()) {
-                    android.util.Log.w("ChatViewModel", "⚠️ No documents found for selected file '$selectedFileName'. Available: ${index.documents.map { it.fileName }}")
-                }
-                filtered
-            } else {
-                android.util.Log.d("ChatViewModel", "No file selected (selectedFileName is null or blank), using all ${index.documents.size} documents")
-                index.documents
-            }
-            
-            if (documentsToSearch.isEmpty()) {
-                val errorMsg = if (selectedFileName != null) {
-                    "No indexed documents found for selected file: $selectedFileName. Available documents: ${index.documents.map { it.fileName }}. Please index the file first."
-                } else {
-                    "No indexed documents found. Please index a file first."
-                }
+            if (allBooks.isEmpty()) {
+                val errorMsg = "No indexed books found. Please index a book first."
                 android.util.Log.w("ChatViewModel", errorMsg)
                 _uiState.update { state ->
                     state.copy(
@@ -250,11 +198,38 @@ class ChatViewModel(
                 return
             }
             
-            val filteredIndex = index.copy(documents = documentsToSearch)
-            android.util.Log.d("ChatViewModel", "Searching in ${documentsToSearch.size} document(s)${if (selectedFileName != null) " (selected: $selectedFileName)" else ""}")
+            android.util.Log.d("ChatViewModel", "Total indexed books: ${allBooks.size}")
+            android.util.Log.d("ChatViewModel", "Available books: ${allBooks.map { it.title }}")
+            
+            // Определяем, в каких книгах искать
+            // Если выбраны конкретные книги - ищем только в них, иначе во всех
+            val selectedFilePaths = _uiState.value.ollamaSelectedFiles
+            val bookIdsToSearch = if (selectedFilePaths.isNotEmpty()) {
+                val selectedBookIds = selectedFilePaths.mapNotNull { filePath ->
+                    val fileName = java.io.File(filePath).name
+                    val selectedBook = allBooks.find { it.title == fileName || it.filePath == filePath }
+                    selectedBook?.bookId
+                }
+                if (selectedBookIds.isNotEmpty()) {
+                    android.util.Log.d("ChatViewModel", "Searching in ${selectedBookIds.size} selected book(s): ${selectedBookIds.map { bookId -> allBooks.find { it.bookId == bookId }?.title }}")
+                    selectedBookIds
+                } else {
+                    android.util.Log.w("ChatViewModel", "Selected files not found in indexed books, searching in all books")
+                    allBooks.map { it.bookId }
+                }
+            } else {
+                android.util.Log.d("ChatViewModel", "No books selected, searching in all ${allBooks.size} books")
+                allBooks.map { it.bookId }
+            }
             
             val queryEmbedding = generateQueryEmbedding(currentInput)
-            val allMatchedChunks = findSimilarVectorsInJson(queryEmbedding, filteredIndex, limit = 10)
+            
+            // Ищем похожие чанки в выбранных книгах
+            val allMatchedChunks = vectorDatabaseService.findSimilarChunks(
+                queryEmbedding = queryEmbedding,
+                bookIds = bookIdsToSearch,
+                limit = 10
+            )
             
             if (allMatchedChunks.isEmpty()) {
                 val errorMsg = "No relevant chunks found for the query."
@@ -275,13 +250,13 @@ class ChatViewModel(
                 android.util.Log.d("ChatViewModel", "🔄 Reranking enabled: using LLM-as-a-reranker (${OllamaApi.DEFAULT_RERANKING_MODEL}) for ${allMatchedChunks.size} candidate chunks")
                 val rerankedChunks = performLlmReranking(currentInput, allMatchedChunks)
                 android.util.Log.d("ChatViewModel", "✅ Reranking completed: ${rerankedChunks.size} chunks reranked")
-                // Берем топ-3 самых релевантных чанков (отсортированы по убыванию, где 1.0 = максимальная релевантность)
-                val top3Chunks = rerankedChunks.take(3)
-                android.util.Log.d("ChatViewModel", "📌 Selected top 3 chunks: ${top3Chunks.mapIndexed { i, chunk -> "#${chunk.chunkIndex} (score=${chunk.similarity})" }}")
-                top3Chunks
+                // Берем топ-5 самых релевантных чанков (отсортированы по убыванию, где 1.0 = максимальная релевантность)
+                val top5Chunks = rerankedChunks.take(5)
+                android.util.Log.d("ChatViewModel", "📌 Selected top 5 chunks: ${top5Chunks.mapIndexed { i, chunk -> "#${chunk.chunkIndex} from '${chunk.bookTitle}' (score=${chunk.similarity})" }}")
+                top5Chunks
             } else {
                 android.util.Log.d("ChatViewModel", "⏭️ Reranking disabled: using top ${allMatchedChunks.size} matched chunks by cosine similarity")
-                allMatchedChunks.take(3)
+                allMatchedChunks.take(5)
             }
             
             if (matchedChunks.isEmpty()) {
@@ -296,7 +271,6 @@ class ChatViewModel(
                 _events.emit(ChatEvent.ShowError(errorMsg))
                 return
             }
-            vectorJsonService.updateQuery(currentInput, queryEmbedding, matchedChunks)
             
             android.util.Log.d("ChatViewModel", "Using RAG with Ollama (vector search), ${matchedChunks.size} matched chunks${if (rerankingEnabled) " (after reranking)" else " (without reranking)"}")
             
@@ -304,9 +278,9 @@ class ChatViewModel(
             matchedChunks.forEachIndexed { index, chunk ->
                 val scorePercent = (chunk.similarity * 100).toInt()
                 if (rerankingEnabled) {
-                    android.util.Log.d("ChatViewModel", "Chunk #${chunk.chunkIndex}: relevance score = ${chunk.similarity} ($scorePercent%)")
+                    android.util.Log.d("ChatViewModel", "Chunk #${chunk.chunkIndex} from '${chunk.bookTitle}': relevance score = ${chunk.similarity} ($scorePercent%)")
                 } else {
-                    android.util.Log.d("ChatViewModel", "Chunk #${chunk.chunkIndex}: similarity score = ${chunk.similarity} ($scorePercent%)")
+                    android.util.Log.d("ChatViewModel", "Chunk #${chunk.chunkIndex} from '${chunk.bookTitle}': similarity score = ${chunk.similarity} ($scorePercent%)")
                 }
             }
             
@@ -314,10 +288,10 @@ class ChatViewModel(
             val contextText = matchedChunks.joinToString("\n\n---\n\n") { chunk ->
                 val relevanceInfo = if (rerankingEnabled) {
                     val relevancePercent = (chunk.similarity * 100).toInt()
-                    "Chunk #${chunk.chunkIndex} (Релевантность: ${chunk.similarity} / ${relevancePercent}%):\n${chunk.text}"
+                    "Chunk #${chunk.chunkIndex} from '${chunk.bookTitle}' (Релевантность: ${chunk.similarity} / ${relevancePercent}%):\n${chunk.text}"
                 } else {
                     val similarityPercent = (chunk.similarity * 100).toInt()
-                    "Chunk #${chunk.chunkIndex} (Похожесть: ${chunk.similarity} / ${similarityPercent}%):\n${chunk.text}"
+                    "Chunk #${chunk.chunkIndex} from '${chunk.bookTitle}' (Похожесть: ${chunk.similarity} / ${similarityPercent}%):\n${chunk.text}"
                 }
                 relevanceInfo
             }
@@ -344,8 +318,8 @@ class ChatViewModel(
                     appendLine()
                     appendLine("---")
                     appendLine("📚 Источники (chunks):")
-                    appendLine("  • Chunk #N (Релевантность: X.XX): [brief summary]")
-                    appendLine("  • Chunk #M (Релевантность: Y.YY): [brief summary]")
+                    appendLine("  • Chunk #N from 'Book Title' (Релевантность: X.XX): [brief summary]")
+                    appendLine("  • Chunk #M from 'Book Title' (Релевантность: Y.YY): [brief summary]")
                     appendLine("---")
                 } else {
                     appendLine("IMPORTANT: After your answer, please provide:")
@@ -367,15 +341,9 @@ class ChatViewModel(
                 ChatMessageDto(role = "user", content = enhancedPrompt)
             )
             
-            val enabledMcpTools = emptySet<String>()
-            val enabledMcpServerTools = emptyMap<String, Set<String>>()
-            
             sendMessageUseCase(
                 model = _uiState.value.selectedModel,
-                messages = messagesWithContext,
-                enabledMcpTools = enabledMcpTools,
-                enabledMcpServerTools = enabledMcpServerTools,
-                remoteControlDeviceId = null
+                messages = messagesWithContext
             )
                 .onSuccess { aiMessage ->
                     val finalContent = if (rerankingEnabled) {
@@ -421,17 +389,11 @@ class ChatViewModel(
     private suspend fun handleSendMessageWithoutOllama(currentInput: String, userMessage: Message) {
         val messagesWithContext = buildMessagesWithContext(currentInput)
         
-        val enabledMcpTools = _uiState.value.enabledMcpTools
-        val enabledMcpServerTools = _uiState.value.enabledMcpServerTools
-        
-        android.util.Log.d("ChatViewModel", "Sending message without Ollama, MCP tools: ${enabledMcpTools.size}, MCP servers: ${enabledMcpServerTools.size}")
+        android.util.Log.d("ChatViewModel", "Sending message without Ollama")
         
         sendMessageUseCase(
             model = _uiState.value.selectedModel,
-            messages = messagesWithContext,
-            enabledMcpTools = enabledMcpTools,
-            enabledMcpServerTools = enabledMcpServerTools,
-            remoteControlDeviceId = if (_uiState.value.remoteControlEnabled) _uiState.value.remoteControlDeviceId else null
+            messages = messagesWithContext
         )
             .onSuccess { aiMessage ->
                 val contentWithMarker = aiMessage.content + "\n\n---\nБез Ollama"
@@ -456,7 +418,7 @@ class ChatViewModel(
                     )
                 }
                 _events.emit(ChatEvent.ShowError(error.message ?: "Unknown error occurred"))
-            }
+        }
     }
 
     private fun handleModelSelected(model: AiModel) {
@@ -503,9 +465,28 @@ class ChatViewModel(
     }
     
     private fun handleExportJson() {
-        val jsonContent = vectorJsonService.getJsonContent()
-        _uiState.update { it.copy(exportedJson = jsonContent) }
         viewModelScope.launch {
+            // Получаем список всех книг из БД
+            val allBooks = vectorDatabaseService.getAllBooksSync()
+            val jsonContent = if (allBooks.isEmpty()) {
+                "{}"
+            } else {
+                // Формируем JSON для отображения (опционально, можно просто показать список книг)
+                com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(
+                    mapOf(
+                        "books" to allBooks.map { 
+                            mapOf(
+                                "bookId" to it.bookId,
+                                "title" to it.title,
+                                "fileHash" to it.fileHash,
+                                "chunkCount" to it.chunkCount,
+                                "timestamp" to it.timestamp
+                            )
+                        }
+                    )
+                )
+            }
+            _uiState.update { it.copy(exportedJson = jsonContent) }
             _events.emit(ChatEvent.ShowJsonExport(jsonContent))
         }
     }
@@ -523,213 +504,27 @@ class ChatViewModel(
         }
     }
 
-    private fun observeMcpTools() {
-        viewModelScope.launch {
-            mcpRepository.observeTools().collect { tools ->
-                _uiState.update { it.copy(mcpTools = tools) }
-            }
-        }
-    }
-
-    private fun observeMcpServers() {
-        viewModelScope.launch {
-            multiMcpRepository.observeServers().collect { servers ->
-                _uiState.update { it.copy(mcpServers = servers) }
-            }
-        }
-    }
-
+    
     private fun handleShowMcpTools() {
-        viewModelScope.launch {
-            // Load tools for all servers
-            val servers = multiMcpRepository.listServers()
-            servers.forEach { server ->
-                multiMcpRepository.listToolsForServer(server.id).onSuccess { tools ->
-                    // Tools are automatically updated in the server via observeServers
-                }
-            }
-            _uiState.update { it.copy(showMcpToolsDialog = true) }
-        }
+        _uiState.update { it.copy(showMcpToolsDialog = true) }
     }
 
     private fun handleDismissMcpTools() {
         _uiState.update { it.copy(showMcpToolsDialog = false) }
     }
-
-    private fun loadEnabledMcpTools() {
-        val enabledTools = preferencesManager.getEnabledMcpTools()
-        _uiState.update { it.copy(enabledMcpTools = enabledTools) }
-    }
-
-    private fun loadEnabledMcpServerTools() {
-        val enabledServerTools = preferencesManager.getEnabledMcpServerTools()
-        _uiState.update { it.copy(enabledMcpServerTools = enabledServerTools) }
-    }
-
-    private fun handleToggleMcpTool(toolName: String, enabled: Boolean) {
-        _uiState.update { state ->
-            val newEnabled = if (enabled) {
-                state.enabledMcpTools + toolName
-            } else {
-                state.enabledMcpTools - toolName
-            }
-            val updatedState = state.copy(enabledMcpTools = newEnabled)
-            // Сохраняем состояние в PreferencesManager
-            preferencesManager.setEnabledMcpTools(newEnabled)
-            updatedState
-        }
-    }
-    
-    private fun handleToggleMcpServerTool(serverId: String, toolName: String, enabled: Boolean) {
-        _uiState.update { state ->
-            val currentServerTools = state.enabledMcpServerTools.toMutableMap()
-            val serverTools = currentServerTools[serverId]?.toMutableSet() ?: mutableSetOf()
-            
-            if (enabled) {
-                serverTools.add(toolName)
-            } else {
-                serverTools.remove(toolName)
-            }
-            
-            currentServerTools[serverId] = serverTools
-            val updatedState = state.copy(enabledMcpServerTools = currentServerTools)
-            
-            // Сохраняем состояние в PreferencesManager
-            preferencesManager.setEnabledToolsForServer(serverId, serverTools)
-            updatedState
-        }
-    }
-
-    private fun loadWeatherNotificationsState() {
-        val enabled = preferencesManager.weatherNotificationsEnabled
-        val testMode = preferencesManager.testModeEnabled
-        _uiState.update { 
-            it.copy(
-                weatherNotificationsEnabled = enabled,
-                testModeEnabled = testMode
-            )
-        }
-        
-        // Планируем задачу если уведомления уже были включены
-        // WorkManager сохраняет задачи даже после перезагрузки устройства
-        if (enabled && !testMode) {
-            // Используем WorkManager только если не включен test mode
-            // WorkManager работает даже когда приложение убито
-            weatherWorkManager.scheduleWeatherNotifications(true)
-            android.util.Log.d("ChatViewModel", "WorkManager scheduled on app start")
-        } else if (enabled && testMode) {
-            // Test mode использует Foreground Service
-            startWeatherService()
-        }
-    }
-
-    private fun loadTestModeState() {
-        val enabled = preferencesManager.testModeEnabled
-        _uiState.update { it.copy(testModeEnabled = enabled) }
-    }
-    
-    private fun loadRemoteControlState() {
-        val enabled = preferencesManager.remoteControlEnabled
-        _uiState.update { it.copy(remoteControlEnabled = enabled) }
-    }
-
-    private fun handleToggleTestMode(enabled: Boolean) {
-        android.util.Log.d("ChatViewModel", "Toggle test mode: $enabled")
-        preferencesManager.testModeEnabled = enabled
-        _uiState.update { it.copy(testModeEnabled = enabled) }
-        
-        // Если включен test mode и уведомления включены, перезапускаем сервис
-        if (enabled && preferencesManager.weatherNotificationsEnabled) {
-            startWeatherService()
-        } else if (!enabled) {
-            stopWeatherService()
-        }
-    }
-
-    private fun handleToggleWeatherNotifications(enabled: Boolean) {
-        android.util.Log.d("ChatViewModel", "Toggle weather notifications: $enabled")
-        preferencesManager.weatherNotificationsEnabled = enabled
-        _uiState.update { it.copy(weatherNotificationsEnabled = enabled) }
-        
-        val testMode = preferencesManager.testModeEnabled
-        
-        if (enabled) {
-            if (testMode) {
-                // Используем Foreground Service
-                startWeatherService()
-            } else {
-                // Используем WorkManager
-                weatherWorkManager.scheduleWeatherNotifications(true)
-            }
-        } else {
-            if (testMode) {
-                stopWeatherService()
-            } else {
-                weatherWorkManager.scheduleWeatherNotifications(false)
-            }
-        }
-    }
-
-    private fun startWeatherService() {
-        val context = weatherWorkManager.getContext()
-        val intent = Intent(context, WeatherNotificationService::class.java).apply {
-            action = WeatherNotificationService.ACTION_START
-        }
-        try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
-            android.util.Log.d("ChatViewModel", "Weather service started")
-        } catch (e: Exception) {
-            android.util.Log.e("ChatViewModel", "Failed to start weather service", e)
-        }
-    }
-
-    private fun stopWeatherService() {
-        val context = weatherWorkManager.getContext()
-        val intent = Intent(context, WeatherNotificationService::class.java).apply {
-            action = WeatherNotificationService.ACTION_STOP
-        }
-        try {
-            context.startService(intent)
-            android.util.Log.d("ChatViewModel", "Weather service stopped")
-        } catch (e: Exception) {
-            android.util.Log.e("ChatViewModel", "Failed to stop weather service", e)
-        }
-    }
-    
-    private fun loadRemoteControlDeviceId() {
-        val deviceId = preferencesManager.remoteControlDeviceId
-        _uiState.update { it.copy(remoteControlDeviceId = deviceId) }
-    }
-    
-    private fun handleToggleRemoteControl(enabled: Boolean) {
-        android.util.Log.d("ChatViewModel", "Toggle Remote Control: $enabled")
-        preferencesManager.remoteControlEnabled = enabled
-        _uiState.update { it.copy(remoteControlEnabled = enabled) }
-    }
-    
-    private fun handleSetRemoteControlDeviceId(deviceId: String?) {
-        android.util.Log.d("ChatViewModel", "Set Remote Control Device ID: $deviceId")
-        preferencesManager.remoteControlDeviceId = deviceId
-        _uiState.update { it.copy(remoteControlDeviceId = deviceId) }
-    }
     
     private fun loadOllamaState() {
         val enabled = preferencesManager.ollamaEnabled
-        val selectedFile = preferencesManager.ollamaSelectedFile
+        val selectedFiles = preferencesManager.ollamaSelectedFiles
         _uiState.update { 
             it.copy(
                 ollamaEnabled = enabled,
-                ollamaSelectedFile = selectedFile
+                ollamaSelectedFiles = selectedFiles
             ) 
         }
         if (enabled) {
             // Проверяем доступность Ollama сервера
             checkOllamaConnection()
-            // Файл должен быть выбран пользователем
         }
     }
     
@@ -745,20 +540,57 @@ class ChatViewModel(
             // Файл должен быть выбран пользователем через file picker
             // Индексация начнется после выбора файла
         } else {
-            // При выключении очищаем выбранный файл
-            preferencesManager.ollamaSelectedFile = null
-            _uiState.update { it.copy(ollamaSelectedFile = null) }
+            // При выключении очищаем выбранные файлы
+            preferencesManager.ollamaSelectedFiles = emptyList()
+            _uiState.update { it.copy(ollamaSelectedFiles = emptyList()) }
         }
     }
     
     private fun handleSelectOllamaFile(filePath: String?) {
         android.util.Log.d("ChatViewModel", "Select Ollama file: $filePath")
-        preferencesManager.ollamaSelectedFile = filePath
-        _uiState.update { it.copy(ollamaSelectedFile = filePath) }
-        if (filePath != null && _uiState.value.ollamaEnabled) {
+        if (filePath == null) {
+            preferencesManager.ollamaSelectedFiles = emptyList()
+            _uiState.update { it.copy(ollamaSelectedFiles = emptyList()) }
+            return
+        }
+        
+        val currentFiles = preferencesManager.ollamaSelectedFiles.toMutableList()
+        
+        // Проверяем лимит (максимум 5 книг)
+        if (currentFiles.size >= 5) {
+            android.util.Log.w("ChatViewModel", "Cannot add more than 5 books")
+            viewModelScope.launch {
+                _events.emit(ChatEvent.ShowError("Cannot add more than 5 books. Please remove a book first."))
+            }
+            return
+        }
+        
+        // Проверяем, не добавлен ли уже этот файл
+        if (currentFiles.contains(filePath)) {
+            android.util.Log.w("ChatViewModel", "File already selected: $filePath")
+            viewModelScope.launch {
+                _events.emit(ChatEvent.ShowError("This file is already selected."))
+            }
+            return
+        }
+        
+        // Добавляем файл в список
+        currentFiles.add(filePath)
+        preferencesManager.ollamaSelectedFiles = currentFiles
+        _uiState.update { it.copy(ollamaSelectedFiles = currentFiles) }
+        
+        if (_uiState.value.ollamaEnabled) {
             // Если Ollama включен и файл выбран, начинаем индексацию
             startIndexingForFile(filePath)
         }
+    }
+    
+    private fun handleRemoveOllamaFile(filePath: String) {
+        android.util.Log.d("ChatViewModel", "Remove Ollama file: $filePath")
+        val currentFiles = preferencesManager.ollamaSelectedFiles.toMutableList()
+        currentFiles.remove(filePath)
+        preferencesManager.ollamaSelectedFiles = currentFiles
+        _uiState.update { it.copy(ollamaSelectedFiles = currentFiles) }
     }
     
     private fun loadRerankingState() {
@@ -873,10 +705,15 @@ class ChatViewModel(
                             _events.emit(ChatEvent.ShowError("Indexing failed: ${error.message}"))
                         }
                 } else {
-                    val index = vectorJsonService.loadVectorIndex()
-                    val totalChunks = index.documents.sumOf { it.chunks.size }
-                    android.util.Log.i("ChatViewModel", "✅ File already indexed ($totalChunks chunks), ready to use")
+                    val fileContent = file.readText(Charsets.UTF_8)
+                    val fileHash = vectorDatabaseService.calculateFileHash(fileContent)
+                    val existingBook = vectorDatabaseService.getBookByHash(fileHash)
+                    if (existingBook != null) {
+                        android.util.Log.i("ChatViewModel", "✅ File already indexed (${existingBook.chunkCount} chunks), ready to use")
                     _events.emit(ChatEvent.ShowError("ℹ️ File already indexed. Ready to use."))
+                    } else {
+                        android.util.Log.w("ChatViewModel", "File hash check failed, but indexing not needed")
+                    }
                 }
             } catch (e: Exception) {
                 android.util.Log.e("ChatViewModel", "Error indexing file", e)
@@ -886,28 +723,26 @@ class ChatViewModel(
     }
 
     private suspend fun buildMessagesWithContext(currentInput: String): List<ChatMessageDto> {
-        val enabledMcpTools = _uiState.value.enabledMcpTools
-        val enabledMcpServerTools = _uiState.value.enabledMcpServerTools
         val ollamaEnabled = _uiState.value.ollamaEnabled
         
-        // Проверяем, есть ли включенные MCP tools
-        val hasEnabledMcpTools = enabledMcpTools.isNotEmpty() || enabledMcpServerTools.values.any { it.isNotEmpty() }
-        
-        // Если включен Ollama, используем векторный поиск (приоритет над MCP tools)
+        // Если включен Ollama, используем векторный поиск
         if (ollamaEnabled) {
-            val index = vectorJsonService.loadVectorIndex()
-            val hasVectors = index.documents.isNotEmpty()
+            val allBooks = vectorDatabaseService.getAllBooksSync()
+            val hasVectors = allBooks.isNotEmpty()
             
             if (hasVectors) {
                 try {
                     val queryEmbedding = generateQueryEmbedding(currentInput)
-                    val matchedChunks = findSimilarVectorsInJson(queryEmbedding, index, limit = 3)
+                    val matchedChunks = vectorDatabaseService.findSimilarChunks(
+                        queryEmbedding = queryEmbedding,
+                        bookIds = null, // Ищем во всех книгах
+                        limit = 5
+                    )
                     
                     if (matchedChunks.isNotEmpty()) {
-                        // Обновляем JSON с текущим запросом
-                        vectorJsonService.updateQuery(currentInput, queryEmbedding, matchedChunks)
-                        
-                        val contextText = matchedChunks.joinToString("\n\n---\n\n") { it.text }
+                        val contextText = matchedChunks.joinToString("\n\n---\n\n") { 
+                            "Chunk #${it.chunkIndex} from '${it.bookTitle}':\n${it.text}"
+                        }
                         val enhancedInput = buildString {
                             appendLine("Based on the following context from indexed documents, please answer the user's question:")
                             appendLine()
@@ -925,8 +760,6 @@ class ChatViewModel(
                         )
                     } else {
                         android.util.Log.w("ChatViewModel", "No similar vectors found for query")
-                        // Все равно обновляем JSON с запросом
-                        vectorJsonService.updateQuery(currentInput, queryEmbedding, emptyList())
                     }
                 } catch (e: Exception) {
                     android.util.Log.e("ChatViewModel", "Error in vector search", e)
@@ -943,15 +776,7 @@ class ChatViewModel(
             }
         }
         
-        // Если включены MCP tools (но не Ollama), отправляем только текущий вопрос без контекста
-        if (hasEnabledMcpTools) {
-            android.util.Log.d("ChatViewModel", "Using MCP tools, skipping context")
-            return listOf(
-                ChatMessageDto(role = "user", content = currentInput)
-            )
-        }
-        
-        // Обычная логика с контекстом для случаев без MCP tools
+        // Обычная логика с контекстом
         val sessionContext = _uiState.value.sessionContext
         val messages = mutableListOf<ChatMessageDto>()
         
@@ -1080,17 +905,17 @@ class ChatViewModel(
     
     private suspend fun performLlmReranking(
         query: String,
-        candidateChunks: List<MatchedChunk>
-    ): List<MatchedChunk> {
+        candidateChunks: List<MatchedChunkWithBook>
+    ): List<MatchedChunkWithBook> {
         android.util.Log.d("ChatViewModel", "🔄 Starting LLM reranking for ${candidateChunks.size} candidate chunks")
         android.util.Log.d("ChatViewModel", "Using model: ${OllamaApi.DEFAULT_RERANKING_MODEL}")
         
         // Оцениваем релевантность каждого кандидата через LLM
         val rerankedChunks = candidateChunks.mapIndexed { index, chunk ->
             try {
-                android.util.Log.d("ChatViewModel", "Evaluating relevance for chunk ${index + 1}/${candidateChunks.size} (chunk #${chunk.chunkIndex})")
-                val relevanceScore = evaluateRelevanceWithLlm(query, chunk.text)
-                android.util.Log.d("ChatViewModel", "✅ Chunk ${index + 1}: relevance score = $relevanceScore (chunk #${chunk.chunkIndex})")
+                android.util.Log.d("ChatViewModel", "Evaluating relevance for chunk ${index + 1}/${candidateChunks.size} (chunk #${chunk.chunkIndex} from '${chunk.bookTitle}')")
+                val relevanceScore = evaluateRelevanceWithLlm(query, chunk.text, chunk.bookTitle)
+                android.util.Log.d("ChatViewModel", "✅ Chunk ${index + 1}: relevance score = $relevanceScore (chunk #${chunk.chunkIndex} from '${chunk.bookTitle}')")
                 chunk.copy(similarity = relevanceScore)
             } catch (e: Exception) {
                 android.util.Log.e("ChatViewModel", "❌ Error evaluating relevance for chunk ${index + 1} (chunk #${chunk.chunkIndex})", e)
@@ -1101,18 +926,20 @@ class ChatViewModel(
         
         // Сортируем по relevance score по убыванию (1.0 = максимальная релевантность)
         val sorted = rerankedChunks.sortedByDescending { it.similarity }
-        android.util.Log.d("ChatViewModel", "📊 Reranking completed. Top 3 scores: ${sorted.take(3).mapIndexed { i, chunk -> "Chunk #${chunk.chunkIndex}=${chunk.similarity}" }}")
+        android.util.Log.d("ChatViewModel", "📊 Reranking completed. Top 5 scores: ${sorted.take(5).mapIndexed { i, chunk -> "Chunk #${chunk.chunkIndex} from '${chunk.bookTitle}'=${chunk.similarity}" }}")
         
         return sorted
     }
     
-    private suspend fun evaluateRelevanceWithLlm(query: String, chunkText: String): Float {
+    private suspend fun evaluateRelevanceWithLlm(query: String, chunkText: String, source: String): Float {
         // Формируем промпт для оценки релевантности согласно требованиям
         val prompt = buildString {
             appendLine("Оцени релевантность текста запросу по шкале от 0.0 до 1.0.")
             appendLine("Запрос: \"$query\"")
+            val sourceText = if (source.isNotBlank()) source else "Неизвестный источник"
+            appendLine("Источник: \"$sourceText\"")
             appendLine("Текст: \"${chunkText.take(1000)}\"") // Ограничиваем длину текста для промпта
-            appendLine("Ответь текст + релевантность текста в виде \"Релевантность число\". Никаких пояснений.")
+            appendLine("Ответь Название источника + текст + релевантность текста в виде \"Релевантность число\". Никаких пояснений.")
         }
         
         android.util.Log.d("ChatViewModel", "📝 Reranking prompt: ${prompt.take(200)}...")
@@ -1181,55 +1008,5 @@ class ChatViewModel(
         }
     }
     
-    private fun findSimilarVectorsInJson(
-        queryEmbedding: List<Float>,
-        index: com.example.aiagentchat.feature.chat.data.service.VectorIndexJson,
-        limit: Int
-    ): List<MatchedChunk> {
-        val allChunks = index.documents.flatMap { doc ->
-            doc.chunks.map { chunk ->
-                Pair(chunk, doc.fileName)
-            }
-        }
-        
-        if (allChunks.isEmpty()) {
-            return emptyList()
-        }
-        
-        val similarities = allChunks.map { (chunk, fileName) ->
-            val similarity = cosineSimilarity(queryEmbedding, chunk.embedding)
-            MatchedChunk(
-                text = chunk.text,
-                chunkIndex = chunk.chunkIndex,
-                similarity = similarity
-            )
-        }.sortedByDescending { it.similarity }
-            .take(limit)
-        
-        return similarities
-    }
-    
-    private fun cosineSimilarity(vec1: List<Float>, vec2: List<Float>): Float {
-        if (vec1.size != vec2.size) {
-            return 0f
-        }
-        
-        var dotProduct = 0f
-        var norm1 = 0f
-        var norm2 = 0f
-        
-        for (i in vec1.indices) {
-            dotProduct += vec1[i] * vec2[i]
-            norm1 += vec1[i] * vec1[i]
-            norm2 += vec2[i] * vec2[i]
-        }
-        
-        val denominator = kotlin.math.sqrt(norm1) * kotlin.math.sqrt(norm2)
-        return if (denominator > 0) {
-            dotProduct / denominator
-        } else {
-            0f
-        }
-    }
 }
 

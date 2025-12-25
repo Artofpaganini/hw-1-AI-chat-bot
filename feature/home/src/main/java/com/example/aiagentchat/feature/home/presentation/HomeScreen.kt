@@ -93,21 +93,6 @@ fun HomeScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
-    // Launcher для запроса разрешения на уведомления
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            scope.launch {
-                snackbarHostState.showSnackbar("Notification permission granted")
-            }
-        } else {
-            scope.launch {
-                snackbarHostState.showSnackbar("Notification permission denied. Please enable it in settings.")
-            }
-        }
-    }
-    
     // Launcher для запроса разрешения на чтение файлов
     val storagePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -116,6 +101,10 @@ fun HomeScreen(
         if (allGranted) {
             scope.launch {
                 snackbarHostState.showSnackbar("Storage permission granted")
+            }
+            // Автоматически переключаем switcher Ollama, если он был включен в первый раз
+            if (!state.ollamaEnabled) {
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleOllama(true))
             }
         } else {
             scope.launch {
@@ -194,47 +183,11 @@ fun HomeScreen(
     
     if (state.showMcpToolsDialog) {
         ToolsDialog(
-            tools = state.mcpTools,
-            enabledTools = state.enabledMcpTools,
-            onToolToggle = { toolName, enabled ->
-                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleMcpTool(toolName, enabled))
-            },
             onDismiss = {
                 viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.DismissMcpTools)
             },
-            weatherNotificationsEnabled = state.weatherNotificationsEnabled,
-            onWeatherNotificationsToggle = { enabled ->
-                if (enabled) {
-                    // Проверяем разрешение на уведомления (Android 13+)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        val hasPermission = ContextCompat.checkSelfPermission(
-                            context,
-                            android.Manifest.permission.POST_NOTIFICATIONS
-                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                        
-                        if (!hasPermission) {
-                            // Запрашиваем разрешение
-                            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                            return@ToolsDialog
-                        }
-                    }
-                }
-                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleWeatherNotifications(enabled))
-            },
-            testModeEnabled = state.testModeEnabled,
-            onTestModeToggle = { enabled ->
-                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleTestMode(enabled))
-            },
-            remoteControlEnabled = state.remoteControlEnabled,
-            onRemoteControlToggle = { enabled ->
-                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleRemoteControl(enabled))
-            },
-            remoteControlDeviceId = state.remoteControlDeviceId,
-            onRemoteControlDeviceIdChange = { deviceId ->
-                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.SetRemoteControlDeviceId(deviceId))
-            },
             ollamaEnabled = state.ollamaEnabled,
-            ollamaSelectedFile = state.ollamaSelectedFile,
+            ollamaSelectedFiles = state.ollamaSelectedFiles,
             onOllamaSelectFile = {
                 // Проверяем разрешения перед открытием file picker
                 val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -258,6 +211,9 @@ fun HomeScreen(
                     storagePermissionLauncher.launch(permissions)
                 }
             },
+            onOllamaRemoveFile = { filePath ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.RemoveOllamaFile(filePath))
+            },
             onOllamaToggle = { enabled ->
                 if (enabled) {
                     // Проверяем разрешения на чтение файлов
@@ -279,18 +235,18 @@ fun HomeScreen(
                     if (!hasAllPermissions) {
                         storagePermissionLauncher.launch(permissions)
                         return@ToolsDialog
+                    } else {
+                        // Разрешения уже есть - переключаем switcher
+                        viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleOllama(enabled))
                     }
+                } else {
+                    // Выключаем Ollama
+                    viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleOllama(enabled))
                 }
-                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleOllama(enabled))
             },
             rerankingEnabled = state.rerankingEnabled,
             onRerankingToggle = { enabled ->
                 viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleReranking(enabled))
-            },
-            mcpServers = state.mcpServers,
-            enabledMcpServerTools = state.enabledMcpServerTools,
-            onServerToolToggle = { serverId, toolName, enabled ->
-                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleMcpServerTool(serverId, toolName, enabled))
             }
         )
     }

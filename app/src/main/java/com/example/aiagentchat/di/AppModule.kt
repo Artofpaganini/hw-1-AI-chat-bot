@@ -13,11 +13,8 @@ import com.example.aiagentchat.feature.chat.data.repository.MetricsRepositoryImp
 import com.example.aiagentchat.feature.chat.data.repository.PricingRepositoryImpl
 import com.example.aiagentchat.feature.chat.domain.repository.AiModelRepository
 import com.example.aiagentchat.feature.chat.domain.repository.ChatRepository
-import com.example.aiagentchat.feature.chat.domain.repository.McpRepository
 import com.example.aiagentchat.feature.chat.domain.repository.MetricsRepository
 import com.example.aiagentchat.feature.chat.domain.repository.PricingRepository
-import com.example.aiagentchat.feature.chat.data.repository.McpRepositoryImpl
-import com.example.aiagentchat.feature.chat.data.api.McpApi
 import com.example.aiagentchat.core.network.ApiClient
 import com.google.gson.Gson
 import com.example.aiagentchat.feature.chat.domain.usecase.CompareModelMetricsUseCase
@@ -73,34 +70,8 @@ val appModule = module {
     single<MetricsRepository> { MetricsRepositoryImpl(get()) }
     
     single<Gson> { Gson() }
-    
-    single<McpApi> {
-        try {
-            val mcpUrl = BuildConfig.MCP_SERVER_URL
-            require(mcpUrl.isNotBlank()) { "MCP_SERVER_URL is blank" }
-            val baseUrl = if (mcpUrl.endsWith("/")) mcpUrl else "$mcpUrl/"
-            ApiClient.createRetrofit(baseUrl).create(McpApi::class.java)
-        } catch (e: Exception) {
-            Log.e("AppModule", "Failed to create McpApi", e)
-            throw InstanceCreationException("Could not create McpApi: ${e.message}", e)
-        }
-    }
-    
-    single<McpRepository> { 
-        McpRepositoryImpl(
-            mcpApi = get(),
-            context7ApiKey = BuildConfig.CONTEXT7_API_KEY.takeIf { it.isNotBlank() },
-            gson = get()
-        )
-    }
-    
-    single<com.example.aiagentchat.feature.chat.domain.repository.MultiMcpRepository> {
-        com.example.aiagentchat.feature.chat.data.repository.MultiMcpRepositoryImpl(
-            gson = get()
-        )
-    }
 
-    factory { SendMessageUseCase(get(), get(), get(), get(), get<com.example.aiagentchat.core.common.preferences.PreferencesManager>(), get<Gson>()) }
+    factory { SendMessageUseCase(get(), get()) }
     factory { SwitchAiModelUseCase(get()) }
     factory { CompareModelMetricsUseCase() }
     factory { ExportChatHistoryUseCase() }
@@ -113,36 +84,14 @@ val appModule = module {
         com.example.aiagentchat.core.common.preferences.PreferencesManager(androidContext())
     }
     
-    single<com.example.aiagentchat.feature.chat.data.storage.WeatherDataStorage> {
-        com.example.aiagentchat.feature.chat.data.storage.WeatherDataStorage(
-            context = androidContext(),
-            gson = get()
-        )
-    }
-    
-    single<com.example.aiagentchat.feature.chat.data.notification.NotificationManager> {
-        com.example.aiagentchat.feature.chat.data.notification.NotificationManager(androidContext())
-    }
-    
-    factory<com.example.aiagentchat.feature.chat.domain.usecase.WeatherSummaryUseCase> {
-        com.example.aiagentchat.feature.chat.domain.usecase.WeatherSummaryUseCase(get())
-    }
-    
-    single<com.example.aiagentchat.feature.chat.data.worker.WeatherWorkManager> {
-        com.example.aiagentchat.feature.chat.data.worker.WeatherWorkManager(androidContext())
-    }
-    
-    single<com.example.aiagentchat.di.WeatherWorkerFactory> {
-        com.example.aiagentchat.di.WeatherWorkerFactory()
-    }
-    
     single<com.example.aiagentchat.feature.chat.data.api.OllamaApi> {
         com.example.aiagentchat.feature.chat.data.api.OllamaApi.create()
     }
     
-    single<com.example.aiagentchat.feature.chat.data.service.VectorJsonService> {
-        com.example.aiagentchat.feature.chat.data.service.VectorJsonService(
-            context = androidContext()
+    single<com.example.aiagentchat.feature.chat.data.service.VectorDatabaseService> {
+        com.example.aiagentchat.feature.chat.data.service.VectorDatabaseService(
+            indexedBookDao = get<com.example.aiagentchat.core.database.ChatDatabase>().indexedBookDao(),
+            bookChunkDao = get<com.example.aiagentchat.core.database.ChatDatabase>().bookChunkDao()
         )
     }
     
@@ -150,7 +99,7 @@ val appModule = module {
         com.example.aiagentchat.feature.chat.data.service.TextIndexingService(
             context = androidContext(),
             ollamaApi = get(),
-            vectorJsonService = get()
+            vectorDatabaseService = get()
         )
     }
     
@@ -170,12 +119,9 @@ val appModule = module {
             chatRepository = get(),
             compressionScheduler = get(),
             contextInitializer = get(),
-            mcpRepository = get(),
-            multiMcpRepository = get(),
             preferencesManager = get(),
-            weatherWorkManager = get(),
             textIndexingService = get(),
-            vectorJsonService = get(),
+            vectorDatabaseService = get(),
             ollamaApi = get()
         )
     }

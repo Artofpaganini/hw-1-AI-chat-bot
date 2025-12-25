@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="CompilerConfiguration">
-    <bytecodeTargetLevel target="17" />
+    <bytecodeTargetLevel target="21">
+      <module name="AI_Agent_Chat.feature.appointments" target="21" />
+      <module name="AI_Agent_Chat.feature.patients" target="21" />
+      <module name="AI_Agent_Chat.feature.profile" target="21" />
+      <module name="AI_Agent_Chat.feature.settings" target="21" />
+    </bytecodeTargetLevel>
   </component>
 </project>

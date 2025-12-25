@@ -7,30 +7,26 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
-import java.security.MessageDigest
 
 class TextIndexingService(
     private val context: Context,
     private val ollamaApi: OllamaApi,
-    private val vectorJsonService: VectorJsonService,
+    private val vectorDatabaseService: VectorDatabaseService,
     private val model: String = OllamaApi.DEFAULT_MODEL
 ) {
     companion object {
         private const val TAG = "TextIndexingService"
-        // Требования: чанки размером 500-700 токенов (уменьшено для безопасности)
-        private const val MIN_CHUNK_SIZE_TOKENS = 500
-        private const val MAX_CHUNK_SIZE_TOKENS = 700
-        // Требования: перекрытие 50-70 токенов (уменьшено для безопасности)
-        private const val MIN_OVERLAP_TOKENS = 50
-        private const val MAX_OVERLAP_TOKENS = 70
-        // Используем средние значения для оптимального баланса
-        private const val TARGET_CHUNK_SIZE_TOKENS = (MIN_CHUNK_SIZE_TOKENS + MAX_CHUNK_SIZE_TOKENS) / 2 // 600
-        private const val TARGET_OVERLAP_TOKENS = (MIN_OVERLAP_TOKENS + MAX_OVERLAP_TOKENS) / 2 // 60
+        // Требования: чанки размером 512 токенов
+        private const val TARGET_CHUNK_SIZE_TOKENS = 512
+        // Требования: перекрытие 50 токенов
+        private const val TARGET_OVERLAP_TOKENS = 50
         // Более консервативная оценка токенов: 1 токен ≈ 4-5 символов (0.2 токенов на символ)
         // Это гарантирует, что чанки не превысят лимит модели
         private const val TOKENS_PER_CHAR = 0.2
-        // Максимальный размер чанка в символах для дополнительной проверки
-        private const val MAX_CHUNK_CHARS = (MAX_CHUNK_SIZE_TOKENS / TOKENS_PER_CHAR * 0.9).toInt() // ~3150 (90% от максимума для запаса)
+        // Размер чанка в символах
+        private const val TARGET_CHUNK_CHARS = (TARGET_CHUNK_SIZE_TOKENS / TOKENS_PER_CHAR).toInt() // ~2560
+        // Размер перекрытия в символах
+        private const val TARGET_OVERLAP_CHARS = (TARGET_OVERLAP_TOKENS / TOKENS_PER_CHAR).toInt() // ~250
     }
 
     private val _indexingProgress = MutableStateFlow<IndexingProgress?>(null)
@@ -75,12 +71,13 @@ class TextIndexingService(
                     content
                 }
             }
-            val fileHash = calculateFileHash(fileContent)
+            val fileHash = vectorDatabaseService.calculateFileHash(fileContent)
 
             Log.d(TAG, "Starting indexing for file: $fileName")
             Log.d(TAG, "File hash: $fileHash")
 
-            if (vectorJsonService.hasDocument(fileName, fileHash)) {
+            // Проверяем, существует ли книга с таким хешем
+            if (vectorDatabaseService.hasBook(fileHash)) {
                 Log.d(TAG, "File already indexed with same hash, skipping")
                 _indexingProgress.value = IndexingProgress(
                     currentChunk = 0,
@@ -89,6 +86,13 @@ class TextIndexingService(
                     status = "Already indexed"
                 )
                 return Result.success(Unit)
+            }
+            
+            // Проверяем лимит книг (максимум 5)
+            if (!vectorDatabaseService.canAddBook()) {
+                val errorMsg = "Cannot add more than 5 books. Please delete some books first."
+                Log.e(TAG, errorMsg)
+                return Result.failure(Exception(errorMsg))
             }
 
             val chunks = splitIntoChunks(fileContent)
@@ -103,7 +107,7 @@ class TextIndexingService(
             
             Log.i(TAG, "🚀 Starting vector indexing...")
 
-            val vectorChunks = mutableListOf<VectorChunk>()
+            val bookChunks = mutableListOf<com.example.aiagentchat.core.database.entity.BookChunkEntity>()
 
             chunks.forEachIndexed { index, chunk ->
                 try {
@@ -123,11 +127,13 @@ class TextIndexingService(
                     val maxVal = normalizedEmbedding.maxOrNull() ?: 1f
                     Log.d(TAG, "Embedding normalized: min=$minVal, max=$maxVal, dimensions=${normalizedEmbedding.size}")
 
-                    vectorChunks.add(
-                        VectorChunk(
-                            text = chunk.text,
-                            embedding = normalizedEmbedding,
-                            chunkIndex = index
+                    // Создаем BookChunkEntity (bookId будет установлен позже)
+                    bookChunks.add(
+                        com.example.aiagentchat.core.database.entity.BookChunkEntity(
+                            bookId = 0, // Будет установлен после создания книги
+                            chunkIndex = index,
+                            chunkText = chunk.text,
+                            embedding = normalizedEmbedding
                         )
                     )
 
@@ -139,15 +145,20 @@ class TextIndexingService(
                 }
             }
 
-            val document = IndexedDocument(
-                fileName = fileName,
+            // Сохраняем книгу и чанки в БД
+            val bookId = vectorDatabaseService.addBook(
+                title = fileName,
+                filePath = filePath,
                 fileHash = fileHash,
-                chunks = vectorChunks
+                chunks = bookChunks
             )
-
-            // Сохраняем документ с хешем файла в JSON
-            vectorJsonService.addDocument(document)
-            Log.i(TAG, "💾 Saved document to JSON: $fileName (hash: $fileHash)")
+            
+            if (bookId == null) {
+                Log.w(TAG, "Book already exists or could not be added")
+                return Result.failure(Exception("Book already indexed or could not be added"))
+            }
+            
+            Log.i(TAG, "💾 Saved book to database: $fileName (hash: $fileHash, bookId=$bookId, ${bookChunks.size} chunks)")
 
             _indexingProgress.value = IndexingProgress(
                 currentChunk = chunks.size,
@@ -157,7 +168,7 @@ class TextIndexingService(
             )
 
             Log.i(TAG, "🎉 Indexing completed successfully for file: $fileName")
-            Log.i(TAG, "📈 Total chunks indexed: ${vectorChunks.size}")
+            Log.i(TAG, "📈 Total chunks indexed: ${bookChunks.size}")
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Error indexing file", e)
@@ -176,13 +187,10 @@ class TextIndexingService(
             return false
         }
 
-        val fileContent = file.readText()
-        val fileHash = calculateFileHash(fileContent)
+        val fileContent = file.readText(Charsets.UTF_8)
+        val fileHash = vectorDatabaseService.calculateFileHash(fileContent)
 
-        val index = vectorJsonService.loadVectorIndex()
-        val hasDocument = vectorJsonService.hasDocument(fileName, fileHash)
-
-        return index.documents.isEmpty() || !hasDocument
+        return !vectorDatabaseService.hasBook(fileHash)
     }
 
     private fun splitIntoChunks(text: String): List<TextChunk> {
@@ -197,15 +205,13 @@ class TextIndexingService(
         Log.i(TAG, "Splitting text into chunks:")
         Log.i(TAG, "  Text length: ${text.length} characters")
         
-        // Используем целевой размер (600 токенов) для оптимального баланса
-        val targetCharsPerChunk = (TARGET_CHUNK_SIZE_TOKENS / TOKENS_PER_CHAR).toInt() // ~3000 символов для 600 токенов
-        val overlapChars = (TARGET_OVERLAP_TOKENS / TOKENS_PER_CHAR).toInt() // ~300 символов для 60 токенов
+        // Используем целевой размер (512 токенов)
+        val targetCharsPerChunk = TARGET_CHUNK_CHARS // ~2560 символов для 512 токенов
+        val overlapChars = TARGET_OVERLAP_CHARS // ~250 символов для 50 токенов
         
         Log.i(TAG, "  Target chunk size: $TARGET_CHUNK_SIZE_TOKENS tokens (~$targetCharsPerChunk chars)")
         Log.i(TAG, "  Overlap: $TARGET_OVERLAP_TOKENS tokens (~$overlapChars chars)")
-        Log.i(TAG, "  Range: $MIN_CHUNK_SIZE_TOKENS-$MAX_CHUNK_SIZE_TOKENS tokens")
-        Log.i(TAG, "  Overlap range: $MIN_OVERLAP_TOKENS-$MAX_OVERLAP_TOKENS tokens")
-        Log.i(TAG, "  Max chunk chars (with safety margin): $MAX_CHUNK_CHARS")
+        Log.i(TAG, "  Max chunk chars: $TARGET_CHUNK_CHARS")
         
         // Если текст короче целевого размера чанка, создаем один чанк
         if (text.length <= targetCharsPerChunk) {
@@ -218,8 +224,8 @@ class TextIndexingService(
         var startIndex = 0
         var chunkIndex = 0
         
-        // Используем 90% от максимума для дополнительного запаса
-        val safeMaxTokens = (MAX_CHUNK_SIZE_TOKENS * 0.9).toInt()
+        // Используем 90% от целевого размера для дополнительного запаса
+        val safeMaxTokens = (TARGET_CHUNK_SIZE_TOKENS * 0.9).toInt()
 
         while (startIndex < text.length) {
             // Вычисляем конец чанка
@@ -280,8 +286,8 @@ class TextIndexingService(
     
     private fun splitLargeChunk(text: String, baseIndex: Int): List<TextChunk> {
         val chunks = mutableListOf<TextChunk>()
-        // Используем 70% от максимума для дополнительного запаса при разбиении больших чанков
-        val maxChars = (MAX_CHUNK_SIZE_TOKENS / TOKENS_PER_CHAR * 0.7).toInt() // ~2450 символов для 700 токенов
+        // Используем 70% от целевого размера для дополнительного запаса при разбиении больших чанков
+        val maxChars = (TARGET_CHUNK_SIZE_TOKENS / TOKENS_PER_CHAR * 0.7).toInt() // ~1792 символов для 512 токенов
         var start = 0
         var index = 0
         
@@ -314,25 +320,25 @@ class TextIndexingService(
         val estimate = maxOf(charBasedEstimate, wordBasedEstimate)
         
         // Добавляем дополнительный запас (10%) для учета специальных символов и форматирования
-        return (estimate * 1.1).toInt().coerceAtMost(MAX_CHUNK_SIZE_TOKENS)
+        return (estimate * 1.1).toInt().coerceAtMost(TARGET_CHUNK_SIZE_TOKENS)
     }
 
     private suspend fun generateEmbedding(text: String): List<Float> {
         // Проверяем размер текста перед отправкой
         val estimatedTokens = estimateTokenCount(text)
         
-        // Используем более строгую проверку: не более 90% от максимума для запаса
-        val maxAllowedTokens = (MAX_CHUNK_SIZE_TOKENS * 0.9).toInt()
+        // Используем более строгую проверку: не более 90% от целевого размера для запаса
+        val maxAllowedTokens = (TARGET_CHUNK_SIZE_TOKENS * 0.9).toInt()
         
         if (estimatedTokens > maxAllowedTokens) {
-            val errorMsg = "Chunk size ($estimatedTokens tokens) exceeds safe maximum ($maxAllowedTokens tokens, 90% of $MAX_CHUNK_SIZE_TOKENS). Text length: ${text.length} chars"
+            val errorMsg = "Chunk size ($estimatedTokens tokens) exceeds safe maximum ($maxAllowedTokens tokens, 90% of $TARGET_CHUNK_SIZE_TOKENS). Text length: ${text.length} chars"
             Log.e(TAG, errorMsg)
             Log.e(TAG, "Text preview (first 200 chars): ${text.take(200)}...")
             throw Exception(errorMsg)
         }
         
-        if (estimatedTokens > MAX_CHUNK_SIZE_TOKENS) {
-            Log.w(TAG, "Warning: Estimated tokens ($estimatedTokens) exceeds max ($MAX_CHUNK_SIZE_TOKENS), but within safe limit")
+        if (estimatedTokens > TARGET_CHUNK_SIZE_TOKENS) {
+            Log.w(TAG, "Warning: Estimated tokens ($estimatedTokens) exceeds target ($TARGET_CHUNK_SIZE_TOKENS), but within safe limit")
         }
         
         Log.d(TAG, "Generating embedding for text: ${text.length} chars, ~$estimatedTokens tokens (max allowed: $maxAllowedTokens)")
@@ -403,11 +409,6 @@ class TextIndexingService(
         }
     }
 
-    private fun calculateFileHash(content: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val hashBytes = digest.digest(content.toByteArray())
-        return hashBytes.joinToString("") { "%02x".format(it) }
-    }
 
     private data class TextChunk(
         val text: String,

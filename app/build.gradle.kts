@@ -84,10 +84,6 @@ dependencies {
     implementation(project(":core:uikit"))
     implementation(project(":feature:chat"))
     implementation(project(":feature:home"))
-    implementation(project(":feature:profile"))
-    implementation(project(":feature:settings"))
-    implementation(project(":feature:patients"))
-    implementation(project(":feature:appointments"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.bundles.compose)

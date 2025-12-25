@@ -73,3 +73,4 @@ echo ""
 echo "✅ Ready to use Ollama in the app!"
 
 
+

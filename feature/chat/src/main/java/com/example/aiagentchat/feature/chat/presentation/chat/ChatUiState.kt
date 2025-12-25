@@ -18,18 +18,10 @@ data class ChatUiState(
     val configuredModels: Set<AiModel> = emptySet(),
     val exportedToon: String? = null,
     val sessionContext: SessionContext = SessionContext(),
-    val mcpTools: List<McpTool> = emptyList(),
-    val enabledMcpTools: Set<String> = emptySet(),
-    val mcpServers: List<McpServer> = emptyList(),
-    val enabledMcpServerTools: Map<String, Set<String>> = emptyMap(), // serverId -> Set<toolName>
     val showMcpToolsDialog: Boolean = false,
-    val weatherNotificationsEnabled: Boolean = false,
-    val testModeEnabled: Boolean = false,
-    val remoteControlEnabled: Boolean = false,
-    val remoteControlDeviceId: String? = null,
     val ollamaEnabled: Boolean = false,
     val exportedJson: String? = null,
-    val ollamaSelectedFile: String? = null, // Путь к выбранному файлу для индексации
+    val ollamaSelectedFiles: List<String> = emptyList(), // Список путей к выбранным файлам для индексации (максимум 5)
     val rerankingEnabled: Boolean = false
 )
 
@@ -44,14 +36,9 @@ sealed interface ChatAction {
     data class CheckMessageThreshold(val message: Message) : ChatAction
     data object ShowMcpTools : ChatAction
     data object DismissMcpTools : ChatAction
-    data class ToggleMcpTool(val toolName: String, val enabled: Boolean) : ChatAction
-    data class ToggleMcpServerTool(val serverId: String, val toolName: String, val enabled: Boolean) : ChatAction
-    data class ToggleWeatherNotifications(val enabled: Boolean) : ChatAction
-    data class ToggleTestMode(val enabled: Boolean) : ChatAction
-    data class ToggleRemoteControl(val enabled: Boolean) : ChatAction
-    data class SetRemoteControlDeviceId(val deviceId: String?) : ChatAction
     data class ToggleOllama(val enabled: Boolean) : ChatAction
     data class SelectOllamaFile(val filePath: String?) : ChatAction
+    data class RemoveOllamaFile(val filePath: String) : ChatAction
     data class ToggleReranking(val enabled: Boolean) : ChatAction
     data object ExportJson : ChatAction
     data object DismissJsonExport : ChatAction
