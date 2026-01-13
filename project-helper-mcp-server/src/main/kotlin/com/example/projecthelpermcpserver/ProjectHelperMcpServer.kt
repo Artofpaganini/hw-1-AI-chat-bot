@@ -99,9 +99,10 @@ fun main(args: Array<String>) {
     val indexedChunks = mutableListOf<Chunk>()
     var isIndexed = false
     
-    fun findMarkdownFiles(root: File): List<File> {
+    fun findProjectFiles(root: File): List<File> {
         val files = mutableListOf<File>()
-        val ignoredDirs = setOf("build", ".git", "node_modules", ".gradle", ".idea", ".cursormcp")
+        val ignoredDirs = setOf("build", ".git", "node_modules", ".gradle", ".idea", ".cursormcp", ".kotlin")
+        val supportedExtensions = setOf(".kt", ".xml", ".java", ".kts", ".md", ".sh")
         
         fun walkDir(dir: File) {
             if (!dir.exists() || !dir.isDirectory) return
@@ -111,8 +112,11 @@ fun main(args: Array<String>) {
             dir.listFiles()?.forEach { file ->
                 if (file.isDirectory) {
                     walkDir(file)
-                } else if (file.name.endsWith(".md", ignoreCase = true)) {
-                    files.add(file)
+                } else {
+                    val extension = file.extension.lowercase()
+                    if (supportedExtensions.any { ext -> extension == ext.removePrefix(".") }) {
+                        files.add(file)
+                    }
                 }
             }
         }
@@ -303,7 +307,7 @@ fun main(args: Array<String>) {
                                     putJsonArray("tools") {
                                         addJsonObject {
                                             put("name", "index_project_files")
-                                            put("description", "Index all .md files in the project")
+                                            put("description", "Index all project files (.kt, .xml, .java, .kts, .md, .sh) in the project")
                                         }
                                         addJsonObject {
                                             put("name", "search_project_files")
@@ -339,13 +343,13 @@ fun main(args: Array<String>) {
                                     
                                     try {
                                         val projectDir = File(projectRoot)
-                                        val mdFiles = findMarkdownFiles(projectDir)
+                                        val projectFiles = findProjectFiles(projectDir)
                                         
-                                        logger.log(Level.INFO, "Found ${mdFiles.size} .md files")
+                                        logger.log(Level.INFO, "Found ${projectFiles.size} project files (.kt, .xml, .java, .kts, .md, .sh)")
                                         
                                         indexedChunks.clear()
                                         
-                                        mdFiles.forEachIndexed { fileIndex, file ->
+                                        projectFiles.forEachIndexed { fileIndex, file ->
                                             try {
                                                 val content = file.readText(Charsets.UTF_8)
                                                 val chunks = chunkText(content)
@@ -388,7 +392,7 @@ fun main(args: Array<String>) {
                                                 putJsonArray("content") {
                                                     addJsonObject {
                                                         put("type", "text")
-                                                        put("text", "Successfully indexed ${mdFiles.size} files with ${indexedChunks.size} chunks")
+                                                        put("text", "Successfully indexed ${projectFiles.size} files (.kt, .xml, .java, .kts, .md, .sh) with ${indexedChunks.size} chunks")
                                                     }
                                                 }
                                             }

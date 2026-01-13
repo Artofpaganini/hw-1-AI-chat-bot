@@ -157,7 +157,7 @@ private fun ProjectHelperItem(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Enable project assistant. Works with .md files from current project. No file limit.",
+                        text = "Enable project assistant. Works with project files (.kt, .xml, .java, .kts, .md, .sh) from current project. No file limit.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp)

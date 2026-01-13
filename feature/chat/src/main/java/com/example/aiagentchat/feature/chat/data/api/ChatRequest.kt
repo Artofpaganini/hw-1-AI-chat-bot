@@ -98,4 +98,3 @@ data class ToolCallFunctionDto(
     @SerializedName("arguments")
     val arguments: String
 )
-

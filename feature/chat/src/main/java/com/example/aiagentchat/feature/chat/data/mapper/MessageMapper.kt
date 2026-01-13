@@ -64,4 +64,3 @@ fun ContextSummary.toEntity(): ContextSummaryEntity {
         timestamp = timestamp
     )
 }
-
