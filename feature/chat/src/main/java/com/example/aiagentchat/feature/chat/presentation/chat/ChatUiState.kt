@@ -23,7 +23,9 @@ data class ChatUiState(
     val exportedJson: String? = null,
     val ollamaSelectedFiles: List<String> = emptyList(), // Список путей к выбранным файлам для индексации (максимум 5)
     val rerankingEnabled: Boolean = false,
-    val projectHelperEnabled: Boolean = false
+    val projectHelperEnabled: Boolean = false,
+    val githubMcpEnabled: Boolean = false,
+    val projectReviewModeEnabled: Boolean = false
 )
 
 sealed interface ChatAction {
@@ -44,6 +46,8 @@ sealed interface ChatAction {
     data class ToggleProjectHelper(val enabled: Boolean) : ChatAction
     data object ExportJson : ChatAction
     data object DismissJsonExport : ChatAction
+    data class ToggleGitHubMcp(val enabled: Boolean) : ChatAction
+    data class ToggleProjectReviewMode(val enabled: Boolean) : ChatAction
 }
 
 sealed interface ChatEvent {

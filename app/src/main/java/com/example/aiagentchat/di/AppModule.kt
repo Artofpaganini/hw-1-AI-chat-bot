@@ -108,6 +108,28 @@ val appModule = module {
             vectorDao = get()
         )
     }
+    
+    single<com.example.aiagentchat.feature.chat.data.service.GitFileDetector> {
+        val preferencesManager = get<com.example.aiagentchat.core.common.preferences.PreferencesManager>()
+        // Try to get projectRootPath from SharedPreferences first, then from BuildConfig
+        val projectRootPath = preferencesManager.projectRootPath?.takeIf { it.isNotBlank() }
+            ?: BuildConfig.PROJECT_ROOT.takeIf { it.isNotBlank() }
+        android.util.Log.d("AppModule", "GitFileDetector projectRootPath: $projectRootPath")
+        com.example.aiagentchat.feature.chat.data.service.GitFileDetector(
+            projectRoot = projectRootPath?.let { java.io.File(it) },
+            projectRootPath = projectRootPath
+        )
+    }
+    
+    single<com.example.aiagentchat.feature.chat.data.repository.ReviewRepository> {
+        com.example.aiagentchat.feature.chat.data.repository.ReviewRepository(
+            gitFileDetector = get(),
+            textIndexingService = get(),
+            vectorDatabaseService = get(),
+            ollamaApi = get(),
+            githubMcpApi = null // Will be initialized lazily in ViewModel when GitHub MCP is enabled
+        )
+    }
 
     viewModel {
         ChatViewModel(
@@ -122,7 +144,8 @@ val appModule = module {
             preferencesManager = get(),
             textIndexingService = get(),
             vectorDatabaseService = get(),
-            ollamaApi = get()
+            ollamaApi = get(),
+            reviewRepository = get()
         )
     }
 }

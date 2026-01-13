@@ -52,7 +52,11 @@ fun ToolsDialog(
     rerankingEnabled: Boolean = false,
     onRerankingToggle: (Boolean) -> Unit = {},
     projectHelperEnabled: Boolean = false,
-    onProjectHelperToggle: (Boolean) -> Unit = {}
+    onProjectHelperToggle: (Boolean) -> Unit = {},
+    githubMcpEnabled: Boolean = false,
+    onGitHubMcpToggle: (Boolean) -> Unit = {},
+    projectReviewModeEnabled: Boolean = false,
+    onProjectReviewModeToggle: (Boolean) -> Unit = {}
 ) {
     BasicAlertDialog(
         onDismissRequest = onDismiss,
@@ -118,7 +122,20 @@ fun ToolsDialog(
                             onSelectFile = onOllamaSelectFile,
                             rerankingEnabled = rerankingEnabled,
                             onRerankingToggle = onRerankingToggle,
-                            projectHelperEnabled = projectHelperEnabled
+                            projectHelperEnabled = projectHelperEnabled,
+                            projectReviewModeEnabled = projectReviewModeEnabled
+                        )
+                    }
+                    item {
+                        GitHubMcpItem(
+                            enabled = githubMcpEnabled,
+                            onToggle = onGitHubMcpToggle
+                        )
+                    }
+                    item {
+                        ProjectReviewModeItem(
+                            enabled = projectReviewModeEnabled,
+                            onToggle = onProjectReviewModeToggle
                         )
                     }
                 }
@@ -181,7 +198,8 @@ private fun OllamaItem(
     onRemoveFile: (String) -> Unit = {},
     rerankingEnabled: Boolean = false,
     onRerankingToggle: (Boolean) -> Unit = {},
-    projectHelperEnabled: Boolean = false
+    projectHelperEnabled: Boolean = false,
+    projectReviewModeEnabled: Boolean = false
 ) {
     Surface(
         shape = MaterialTheme.shapes.medium,
@@ -220,7 +238,7 @@ private fun OllamaItem(
                 )
             }
             
-            if (enabled && !projectHelperEnabled) {
+            if (enabled && !projectHelperEnabled && !projectReviewModeEnabled) {
                 HorizontalDivider(
                     modifier = Modifier.padding(vertical = 12.dp),
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
@@ -334,4 +352,92 @@ private fun OllamaItem(
     }
 }
 
+@Composable
+private fun GitHubMcpItem(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "GitHub MCP",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Enable GitHub MCP server integration. Provides access to PR diffs and file contents via GitHub API.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onToggle
+                )
+            }
+        }
+    }
+}
 
+@Composable
+private fun ProjectReviewModeItem(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "Project Review Mode",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "When enabled, hides file upload UI and automatically embeds changed files (.kt, .xml, .java, .kts, .sh) for code review. Use /review command to trigger review.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onToggle
+                )
+            }
+        }
+    }
+}

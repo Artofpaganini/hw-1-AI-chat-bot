@@ -41,7 +41,13 @@ app/
 DEEPSEEK_API_KEY=your_deepseek_api_key_here
 OPENROUTER_API_KEY=your_openrouter_api_key_here
 CONTEXT7_API_KEY=your_context7_api_key_here
+GITHUB_PERSONAL_ACCESS_TOKEN=your_github_personal_access_token_here
 ```
+
+**GitHub Personal Access Token:**
+- Создайте токен на https://github.com/settings/tokens
+- Выберите scopes: `repo`, `read:packages`, `read:org`
+- Используется для GitHub MCP Server (code review с PR diffs)
 
 ## Project Helper - Ассистент разработчика
 
@@ -73,6 +79,96 @@ CONTEXT7_API_KEY=your_context7_api_key_here
    - При включенном Project Helper + Ollama Vector Search все запросы используют RAG с файлами проекта
 
 Подробнее см. [20HW_PROJECT_ASSISTENT.md](20HW_PROJECT_ASSISTENT.md)
+
+## Git MCP Server - Доступ к Git репозиторию
+
+Проект поддерживает доступ к git репозиторию через Git MCP Server. Это решает проблему доступа к git с Android устройства/эмулятора.
+
+### Настройка Git MCP Server
+
+1. **Запустите Git MCP Server:**
+   ```bash
+   cd git-mcp-server
+   ./start-server.sh
+   ```
+   
+   Сервер будет доступен на порту 8084 (по умолчанию).
+
+2. **Настройте PROJECT_ROOT (опционально):**
+   
+   Добавьте в `local.properties`:
+   ```properties
+   PROJECT_ROOT=/Users/Victor/work/hw-1-AI-chat-bot
+   ```
+
+3. **Использование:**
+   - Команда `/review` автоматически использует Git MCP Server, если локальный git недоступен
+   - GitFileDetector автоматически переключается на Git MCP Server при необходимости
+
+Подробнее см. [git-mcp-server/README.md](git-mcp-server/README.md)
+
+## Code Review System
+
+Проект поддерживает автоматический code review через команду `/review`.
+
+### Настройка
+
+#### 1. Запуск Git MCP Server (обязательно)
+
+Git MCP Server необходим для доступа к git репозиторию с Android устройства:
+
+```bash
+cd git-mcp-server
+./start-server.sh
+```
+
+Сервер будет доступен на порту 8084 (по умолчанию).
+
+**Опционально:** Настройте PROJECT_ROOT в `local.properties`:
+```properties
+PROJECT_ROOT=/Users/Victor/work/hw-1-AI-chat-bot
+```
+
+#### 2. Запуск GitHub MCP Server (опционально, для PR diffs)
+
+1. **Создайте GitHub Personal Access Token:**
+   - Перейдите на https://github.com/settings/tokens
+   - Нажмите "Generate new token (classic)"
+   - Выберите scopes: `repo`, `read:packages`, `read:org`
+   - Скопируйте токен
+
+2. **Установите токен в `local.properties`:**
+   ```properties
+   GITHUB_PERSONAL_ACCESS_TOKEN=your_github_personal_access_token
+   ```
+
+3. **Запустите GitHub MCP Server:**
+   ```bash
+   cd github-mcp-server
+   ./start-server.sh
+   ```
+   
+   Сервер будет доступен на порту 8083 (по умолчанию).
+
+#### 3. Или запустите все серверы сразу:
+
+```bash
+./start-servers.sh
+```
+
+#### 4. В приложении:
+
+- Откройте Tools (⚙️)
+- Включите переключатель "GitHub MCP" (опционально)
+- Включите переключатель "Project Review Mode" (опционально)
+
+#### 5. Использование:
+
+- Введите `/review` в чате для автоматического code review измененных файлов
+- Git MCP Server автоматически используется для получения списка измененных файлов
+- GitHub MCP используется для получения PR diffs (если настроен)
+
+Подробнее см. [21HW_PROJECT_REVIEW_ASSISTENT.md](21HW_PROJECT_REVIEW_ASSISTENT.md)
 
 ## Ollama Vector Search
 

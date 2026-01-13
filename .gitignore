@@ -93,3 +93,6 @@ infer-out/
 # Custom
 referal
 app/src/main/assets/version.properties
+
+# GitHub MCP Server
+github-mcp-server/.env

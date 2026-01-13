@@ -251,6 +251,14 @@ fun HomeScreen(
             rerankingEnabled = state.rerankingEnabled,
             onRerankingToggle = { enabled ->
                 viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleReranking(enabled))
+            },
+            githubMcpEnabled = state.githubMcpEnabled,
+            onGitHubMcpToggle = { enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleGitHubMcp(enabled))
+            },
+            projectReviewModeEnabled = state.projectReviewModeEnabled,
+            onProjectReviewModeToggle = { enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleProjectReviewMode(enabled))
             }
         )
     }

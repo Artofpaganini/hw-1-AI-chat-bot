@@ -50,6 +50,9 @@ android {
         
         val googleDriveAccessToken = localProperties.getProperty("GOOGLE_DRIVE_ACCESS_TOKEN") ?: ""
         buildConfigField("String", "GOOGLE_DRIVE_ACCESS_TOKEN", "\"$googleDriveAccessToken\"")
+        
+        val projectRoot = localProperties.getProperty("PROJECT_ROOT") ?: ""
+        buildConfigField("String", "PROJECT_ROOT", "\"$projectRoot\"")
     }
 
     buildTypes {

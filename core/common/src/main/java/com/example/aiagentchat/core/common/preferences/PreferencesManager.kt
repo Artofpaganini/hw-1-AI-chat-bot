@@ -16,6 +16,9 @@ class PreferencesManager(context: Context) {
         private const val KEY_OLLAMA_SELECTED_FILES = "ollama_selected_files" // JSON array of file paths
         private const val KEY_RERANKING_ENABLED = "reranking_enabled"
         private const val KEY_PROJECT_HELPER_ENABLED = "project_helper_enabled"
+        private const val KEY_GITHUB_MCP_ENABLED = "github_mcp_enabled"
+        private const val KEY_PROJECT_REVIEW_MODE_ENABLED = "project_review_mode_enabled"
+        private const val KEY_PROJECT_ROOT_PATH = "project_root_path"
     }
 
     var lastUserQuery: String?
@@ -62,5 +65,17 @@ class PreferencesManager(context: Context) {
     var projectHelperEnabled: Boolean
         get() = prefs.getBoolean(KEY_PROJECT_HELPER_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_PROJECT_HELPER_ENABLED, value).apply()
+    
+    var githubMcpEnabled: Boolean
+        get() = prefs.getBoolean(KEY_GITHUB_MCP_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_GITHUB_MCP_ENABLED, value).apply()
+    
+    var projectReviewModeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_PROJECT_REVIEW_MODE_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_PROJECT_REVIEW_MODE_ENABLED, value).apply()
+    
+    var projectRootPath: String?
+        get() = prefs.getString(KEY_PROJECT_ROOT_PATH, null)
+        set(value) = prefs.edit().putString(KEY_PROJECT_ROOT_PATH, value).apply()
 }
 
