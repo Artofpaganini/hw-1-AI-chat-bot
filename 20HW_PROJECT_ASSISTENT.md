@@ -261,7 +261,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 /help Какие модели AI поддерживаются?
 /help Как настроить Ollama?
 /help Опиши Логику работы при включенном Project Helper
-/help Как работает ChatViewModel?
+/help Как работает ChatViewModel.kt?
 /help Какие зависимости используются в build.gradle.kts?
 ```
 

@@ -89,7 +89,7 @@ object ApiClient {
         .addInterceptor(loggingInterceptor)
         .dns(localDns) // Используем специальный DNS ТОЛЬКО для локальных адресов
         .connectTimeout(60, TimeUnit.SECONDS) // Увеличено для Ollama (может быть медленным)
-        .readTimeout(120, TimeUnit.SECONDS) // Увеличено для генерации embeddings
+        .readTimeout(360, TimeUnit.SECONDS) // 6 минут для reranking (может обрабатывать до 20 кандидатов, каждый требует запрос к LLM)
         .writeTimeout(60, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()

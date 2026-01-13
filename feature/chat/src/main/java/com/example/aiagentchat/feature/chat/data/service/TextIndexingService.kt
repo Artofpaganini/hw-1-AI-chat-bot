@@ -52,14 +52,14 @@ class TextIndexingService(
             // Проверяем расширение файла
             val fileExtension = file.extension.lowercase()
             if (fileExtension !in listOf("md", "txt", "pdf")) {
-                return Result.failure(Exception("Unsupported file type: $fileExtension. Supported types: .md, .txt, .pdf"))
+                return Result.failure(Exception("Unsupported file type: $fileExtension. Supported types: .txt, .pdf"))
             }
 
             // Читаем содержимое файла в зависимости от типа
             val fileContent = when (fileExtension) {
                 "pdf" -> {
                     // Для PDF нужна специальная библиотека, пока возвращаем ошибку
-                    return Result.failure(Exception("PDF support is not yet implemented. Please use .md or .txt files."))
+                    return Result.failure(Exception("PDF support is not yet implemented. Please use .txt files."))
                 }
                 else -> {
                     val content = file.readText(Charsets.UTF_8)

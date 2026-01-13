@@ -70,9 +70,15 @@ fun main(args: Array<String>) {
     logger.log(Level.INFO, "Ollama URL: $ollamaUrl")
     
     // Проверка доступности Ollama
+    // Увеличенные таймауты для работы с Ollama:
+    // - connectTimeout: 60 секунд (для медленных подключений)
+    // - readTimeout: 300 секунд (5 минут) для reranking, который может обрабатывать до 20 кандидатов
+    //   Каждый кандидат требует запрос к LLM, который может занимать 5-10 секунд
     val httpClient = OkHttpClient.Builder()
-        .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(300, java.util.concurrent.TimeUnit.SECONDS) // 5 минут для reranking
+        .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
     
     try {
@@ -102,7 +108,7 @@ fun main(args: Array<String>) {
     fun findProjectFiles(root: File): List<File> {
         val files = mutableListOf<File>()
         val ignoredDirs = setOf("build", ".git", "node_modules", ".gradle", ".idea", ".cursormcp", ".kotlin")
-        val supportedExtensions = setOf(".kt", ".xml", ".java", ".kts", ".md", ".sh")
+        val supportedExtensions = setOf(".kt", ".xml", ".java", ".kts", ".sh")
         
         fun walkDir(dir: File) {
             if (!dir.exists() || !dir.isDirectory) return
@@ -195,14 +201,29 @@ fun main(args: Array<String>) {
         candidateChunks: List<Chunk>,
         ollamaUrl: String
     ): List<IndexedChunk> {
-        val reranked = candidateChunks.map { chunk ->
+        logger.log(Level.INFO, "Starting reranking for ${candidateChunks.size} candidates...")
+        val reranked = candidateChunks.mapIndexed { index, chunk ->
+            if ((index + 1) % 5 == 0 || index == 0) {
+                logger.log(Level.INFO, "Reranking progress: ${index + 1}/${candidateChunks.size} candidates processed")
+            }
+            // Определяем источник: если файл существует, берем имя, иначе "Неизвестный источник"
+            val source = try {
+                val file = File(chunk.filePath)
+                if (file.exists() && file.name.isNotBlank()) {
+                    file.name
+                } else {
+                    "Неизвестный источник"
+                }
+            } catch (e: Exception) {
+                "Неизвестный источник"
+            }
+            
             val prompt = buildString {
                 appendLine("Оцени релевантность текста запросу по шкале от 0.0 до 1.0.")
                 appendLine("Запрос: \"$query\"")
-                val source = chunk.filePath.let { File(it).name }.takeIf { it.isNotBlank() } ?: "Неизвестный источник"
                 appendLine("Источник: \"$source\"")
                 appendLine("Текст: \"${chunk.text.take(800)}\"")
-                appendLine("Ответь Название источника + текст + релевантность текста в виде \"Релевантность число\". Никаких пояснений.")
+                appendLine("Ответь Название источника(файла) + текст + релевантность текста в виде \"Релевантность число\". Никаких пояснений.")
             }
             
             val requestBody = buildJsonObject {
@@ -234,31 +255,135 @@ fun main(args: Array<String>) {
                     } catch (e: Exception) {
                         // Fallback: пытаемся найти JSON объект в тексте
                         val jsonMatch = Regex("\\{[^}]*\"message\"[^}]*\\}").find(lastLine)
-                        jsonMatch?.value?.let { json.parseToJsonElement(it).jsonObject } ?: return@map IndexedChunk(chunk, 0.5f)
+                        jsonMatch?.value?.let { 
+                            try {
+                                json.parseToJsonElement(it).jsonObject
+                            } catch (e2: Exception) {
+                                logger.log(Level.WARNING, "Failed to parse JSON response for chunk ${index + 1}, using default relevance 0.5")
+                                null
+                            }
+                        } ?: run {
+                            logger.log(Level.WARNING, "Failed to parse JSON response for chunk ${index + 1}, using default relevance 0.5")
+                            null
+                        }
                     }
                     
-                    val content = jsonResponse["message"]?.jsonObject?.get("content")?.jsonPrimitive?.content ?: ""
+                    if (jsonResponse == null) {
+                        0.5f
+                    } else {
+                        val content = jsonResponse["message"]?.jsonObject?.get("content")?.jsonPrimitive?.content ?: ""
                     
-                    // Парсим релевантность
-                    val relevanceRegex = Regex("Релевантность\\s*([0-9.]+)|([0-9.]+)")
-                    val match = relevanceRegex.find(content)
-                    val score = match?.let {
-                        (it.groupValues[1].takeIf { it.isNotBlank() } ?: it.groupValues[2]).toFloatOrNull()?.coerceIn(0f, 1f)
-                    } ?: 0.5f
-                    
-                    score
+                        // Парсим релевантность
+                        val relevanceRegex = Regex("Релевантность\\s*([0-9.]+)|([0-9.]+)")
+                        val match = relevanceRegex.find(content)
+                        val score = match?.let {
+                            (it.groupValues[1].takeIf { it.isNotBlank() } ?: it.groupValues[2]).toFloatOrNull()?.coerceIn(0f, 1f)
+                        } ?: 0.5f
+                        
+                        score
+                    }
                 } else {
                     0.5f
                 }
+            } catch (e: java.net.SocketTimeoutException) {
+                logger.log(Level.WARNING, "Timeout in reranking for chunk ${index + 1}/${candidateChunks.size}: ${e.message}")
+                logger.log(Level.WARNING, "Consider increasing readTimeout or reducing number of candidates")
+                0.5f // Возвращаем среднюю релевантность при таймауте
             } catch (e: Exception) {
-                logger.log(Level.WARNING, "Error in reranking: ${e.message}")
+                logger.log(Level.WARNING, "Error in reranking for chunk ${index + 1}/${candidateChunks.size}: ${e.message}")
                 0.5f
             }
             
             IndexedChunk(chunk, relevance)
         }
         
-        return reranked.sortedByDescending { it.relevance }
+        logger.log(Level.INFO, "Reranking completed. Sorting results by relevance...")
+        val sorted = reranked.sortedByDescending { it.relevance }
+        logger.log(Level.INFO, "Top 3 relevance scores: ${sorted.take(3).map { String.format("%.2f", it.relevance) }.joinToString(", ")}")
+        return sorted
+    }
+    
+    suspend fun generateSummaryFromChunks(
+        query: String,
+        topChunks: List<IndexedChunk>,
+        ollamaUrl: String
+    ): String {
+        // Формируем контекст из топ-10 чанков
+        val context = topChunks.mapIndexed { index, indexedChunk ->
+            val source = File(indexedChunk.chunk.filePath).name
+            val relevance = String.format("%.2f", indexedChunk.relevance)
+            val text = indexedChunk.chunk.text.take(500) // Ограничиваем длину каждого чанка
+            "[$index] Источник: $source, Релевантность: $relevance\nТекст: $text"
+        }.joinToString("\n\n")
+        
+        val prompt = buildString {
+            appendLine("На основании следующих релевантных фрагментов кода/документации ответь на вопрос пользователя.")
+            appendLine("Вопрос: \"$query\"")
+            appendLine()
+            appendLine("Релевантные фрагменты (отсортированы по релевантности, от наиболее релевантных к менее релевантным):")
+            appendLine(context)
+            appendLine()
+            appendLine("Требования к ответу:")
+            appendLine("- Ответ должен быть КРАТКИМ и структурированным")
+            appendLine("- Изложи ответ ПО ПУНКТАМ (используй нумерацию или маркеры)")
+            appendLine("- Используй только информацию из предоставленных фрагментов")
+            appendLine("- Не добавляй пояснений, только факты из фрагментов")
+            appendLine("- В конце ответа укажи источники (имена файлов) и их релевантность в формате: \"Источник: [имя файла], Релевантность: [число]\"")
+        }
+        
+        val requestBody = buildJsonObject {
+            put("model", "phi3:medium")
+            putJsonArray("messages") {
+                addJsonObject {
+                    put("role", "user")
+                    put("content", prompt)
+                }
+            }
+            put("stream", false)
+        }.toString()
+        
+        val request = Request.Builder()
+            .url("$ollamaUrl/api/chat")
+            .post(requestBody.toRequestBody("application/json".toMediaType()))
+            .build()
+        
+        return try {
+            val response = httpClient.newCall(request).execute()
+            if (response.isSuccessful) {
+                val body = response.body?.string() ?: ""
+                // Парсим streaming JSON ответы
+                val lines = body.lines().filter { it.startsWith("{") }
+                val lastLine = lines.lastOrNull() ?: body
+                
+                val jsonResponse = try {
+                    json.parseToJsonElement(lastLine).jsonObject
+                } catch (e: Exception) {
+                    // Fallback: пытаемся найти JSON объект в тексте
+                    val jsonMatch = Regex("\\{[^}]*\"message\"[^}]*\\}").find(lastLine)
+                    jsonMatch?.value?.let { json.parseToJsonElement(it).jsonObject } ?: return "Ошибка парсинга ответа от LLM"
+                }
+                
+                val content = jsonResponse["message"]?.jsonObject?.get("content")?.jsonPrimitive?.content ?: "Не удалось получить ответ"
+                
+                // Добавляем информацию об источниках в конец ответа
+                val sourcesInfo = buildString {
+                    appendLine()
+                    appendLine("Источники:")
+                    topChunks.take(10).forEach { indexedChunk ->
+                        val source = File(indexedChunk.chunk.filePath).name
+                        val relevance = String.format("%.2f", indexedChunk.relevance)
+                        appendLine("- $source (Релевантность: $relevance)")
+                    }
+                }
+                
+                content + sourcesInfo
+            } else {
+                "Ошибка при генерации ответа: ${response.code}"
+            }
+        } catch (e: Exception) {
+            logger.log(Level.WARNING, "Error generating summary: ${e.message}")
+            "Ошибка при генерации ответа: ${e.message}"
+        }
     }
     
     val server = embeddedServer(CIO, port = port) {
@@ -307,7 +432,7 @@ fun main(args: Array<String>) {
                                     putJsonArray("tools") {
                                         addJsonObject {
                                             put("name", "index_project_files")
-                                            put("description", "Index all project files (.kt, .xml, .java, .kts, .md, .sh) in the project")
+                                            put("description", "Index all project files (.kt, .xml, .java, .kts, .sh) in the project")
                                         }
                                         addJsonObject {
                                             put("name", "search_project_files")
@@ -345,7 +470,7 @@ fun main(args: Array<String>) {
                                         val projectDir = File(projectRoot)
                                         val projectFiles = findProjectFiles(projectDir)
                                         
-                                        logger.log(Level.INFO, "Found ${projectFiles.size} project files (.kt, .xml, .java, .kts, .md, .sh)")
+                                        logger.log(Level.INFO, "Found ${projectFiles.size} project files (.kt, .xml, .java, .kts, .sh)")
                                         
                                         indexedChunks.clear()
                                         
@@ -392,7 +517,7 @@ fun main(args: Array<String>) {
                                                 putJsonArray("content") {
                                                     addJsonObject {
                                                         put("type", "text")
-                                                        put("text", "Successfully indexed ${projectFiles.size} files (.kt, .xml, .java, .kts, .md, .sh) with ${indexedChunks.size} chunks")
+                                                        put("text", "Successfully indexed ${projectFiles.size} files (.kt, .xml, .java, .kts, .sh) with ${indexedChunks.size} chunks")
                                                     }
                                                 }
                                             }
@@ -444,42 +569,51 @@ fun main(args: Array<String>) {
                                                     )
                                                 } else {
                                                     // Находим релевантные чанки по косинусному сходству
-                                                    val candidates = indexedChunks
+                                                    // Берем больше кандидатов для reranking (до 20), чтобы после reranking выбрать топ-10
+                                                    val initialCandidates = indexedChunks
                                                         .filter { it.embedding != null }
                                                         .map { chunk ->
                                                             val similarity = cosineSimilarity(queryEmbedding, chunk.embedding!!)
                                                             IndexedChunk(chunk, similarity)
                                                         }
                                                         .sortedByDescending { it.relevance }
-                                                        .take(10)
+                                                        .take(if (rerankingEnabled) 20 else 10) // Для reranking берем больше кандидатов
                                                     
-                                                    val finalChunks = if (rerankingEnabled && candidates.isNotEmpty()) {
-                                                        logger.log(Level.INFO, "Performing reranking for ${candidates.size} candidates...")
-                                                        performReranking(query, candidates.map { it.chunk }, ollamaUrl)
+                                                    val finalChunks = if (rerankingEnabled && initialCandidates.isNotEmpty()) {
+                                                        logger.log(Level.INFO, "Performing reranking for ${initialCandidates.size} candidates...")
+                                                        // Выполняем reranking для всех кандидатов
+                                                        val reranked = performReranking(query, initialCandidates.map { it.chunk }, ollamaUrl)
+                                                        // После reranking берем топ-10 самых релевантных (отсортированы по убыванию, где 1.0 - максимальная релевантность)
+                                                        reranked.take(10)
                                                     } else {
-                                                        candidates
+                                                        // Без reranking используем топ-10 по косинусному сходству
+                                                        initialCandidates.take(10)
                                                     }
                                                     
-                                                    val topChunk = finalChunks.firstOrNull()
+                                                    // Топ-10 самых релевантных чанков (отсортированы по убыванию, где 1.0 - максимальная релевантность)
+                                                    val topChunks = finalChunks
                                                     
-                                                    if (topChunk != null) {
-                                                        val source = File(topChunk.chunk.filePath).name
-                                                        val relevance = topChunk.relevance
+                                                    if (topChunks.isNotEmpty()) {
+                                                        logger.log(Level.INFO, "✅ Selected ${topChunks.size} top chunks for response generation")
                                                         
-                                                        logger.log(Level.INFO, "✅ Top chunk selected: $source (relevance: $relevance)")
-                                                        
-                                                        // Ограничиваем текст до 5 предложений (но сохраняем информацию об источнике)
-                                                        val textSentences = topChunk.chunk.text.split(Regex("[.!?]+")).filter { it.trim().isNotBlank() }
-                                                        val limitedText = textSentences.take(5).joinToString(". ") + if (textSentences.size > 5) "..." else ""
-                                                        
-                                                        val result = buildString {
-                                                            appendLine("Источник: $source")
-                                                            appendLine("Релевантность: $relevance")
-                                                            appendLine()
-                                                            appendLine(limitedText)
+                                                        // Формируем краткий ответ на основе топ-10 чанков
+                                                        val result = if (rerankingEnabled) {
+                                                            // При reranking используем LLM для генерации краткого ответа по пунктам
+                                                            generateSummaryFromChunks(query, topChunks, ollamaUrl)
+                                                        } else {
+                                                            // Без reranking просто объединяем информацию из чанков
+                                                            buildString {
+                                                                topChunks.forEachIndexed { index, indexedChunk ->
+                                                                    val source = File(indexedChunk.chunk.filePath).name
+                                                                    val relevance = indexedChunk.relevance
+                                                                    appendLine("${index + 1}. [Источник: $source, Релевантность: ${String.format("%.2f", relevance)}]")
+                                                                    val textSentences = indexedChunk.chunk.text.split(Regex("[.!?]+")).filter { it.trim().isNotBlank() }
+                                                                    val limitedText = textSentences.take(3).joinToString(". ")
+                                                                    appendLine("   $limitedText")
+                                                                    appendLine()
+                                                                }
+                                                            }
                                                         }
-                                                        
-                                                        val limitedResult = result
                                                         
                                                         JsonRpcResponse(
                                                             id = request.id,
@@ -487,7 +621,7 @@ fun main(args: Array<String>) {
                                                                 putJsonArray("content") {
                                                                     addJsonObject {
                                                                         put("type", "text")
-                                                                        put("text", limitedResult)
+                                                                        put("text", result)
                                                                     }
                                                                 }
                                                             }
