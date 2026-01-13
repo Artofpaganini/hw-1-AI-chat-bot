@@ -22,7 +22,8 @@ data class ChatUiState(
     val ollamaEnabled: Boolean = false,
     val exportedJson: String? = null,
     val ollamaSelectedFiles: List<String> = emptyList(), // Список путей к выбранным файлам для индексации (максимум 5)
-    val rerankingEnabled: Boolean = false
+    val rerankingEnabled: Boolean = false,
+    val projectHelperEnabled: Boolean = false
 )
 
 sealed interface ChatAction {
@@ -40,6 +41,7 @@ sealed interface ChatAction {
     data class SelectOllamaFile(val filePath: String?) : ChatAction
     data class RemoveOllamaFile(val filePath: String) : ChatAction
     data class ToggleReranking(val enabled: Boolean) : ChatAction
+    data class ToggleProjectHelper(val enabled: Boolean) : ChatAction
     data object ExportJson : ChatAction
     data object DismissJsonExport : ChatAction
 }

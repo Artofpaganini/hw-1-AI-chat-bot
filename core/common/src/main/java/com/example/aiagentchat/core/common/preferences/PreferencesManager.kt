@@ -15,6 +15,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_OLLAMA_ENABLED = "ollama_enabled"
         private const val KEY_OLLAMA_SELECTED_FILES = "ollama_selected_files" // JSON array of file paths
         private const val KEY_RERANKING_ENABLED = "reranking_enabled"
+        private const val KEY_PROJECT_HELPER_ENABLED = "project_helper_enabled"
     }
 
     var lastUserQuery: String?
@@ -57,5 +58,9 @@ class PreferencesManager(context: Context) {
     var rerankingEnabled: Boolean
         get() = prefs.getBoolean(KEY_RERANKING_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_RERANKING_ENABLED, value).apply()
+    
+    var projectHelperEnabled: Boolean
+        get() = prefs.getBoolean(KEY_PROJECT_HELPER_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_PROJECT_HELPER_ENABLED, value).apply()
 }
 

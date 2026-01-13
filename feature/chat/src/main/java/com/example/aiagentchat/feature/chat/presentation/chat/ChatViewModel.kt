@@ -19,8 +19,13 @@ import com.example.aiagentchat.feature.chat.data.service.TextIndexingService
 import com.example.aiagentchat.feature.chat.data.service.VectorDatabaseService
 import com.example.aiagentchat.feature.chat.data.service.MatchedChunkWithBook
 import com.example.aiagentchat.feature.chat.data.api.OllamaApi
+import com.example.aiagentchat.feature.chat.data.api.ProjectHelperMcpApi
+import com.example.aiagentchat.feature.chat.data.api.JsonRpcRequest
+import com.example.aiagentchat.feature.chat.data.api.JsonRpcResponse
+import com.example.aiagentchat.core.network.ApiClient
 import android.os.Environment
 import java.io.File
+import com.google.gson.Gson
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,6 +61,15 @@ class ChatViewModel(
 
     private val _events = MutableSharedFlow<ChatEvent>()
     val events: SharedFlow<ChatEvent> = _events.asSharedFlow()
+    
+    private val projectHelperMcpApi: ProjectHelperMcpApi by lazy {
+        val baseUrl = "http://10.0.2.2:8081/"
+        val retrofit = ApiClient.createRetrofit(baseUrl)
+        retrofit.create(ProjectHelperMcpApi::class.java)
+    }
+    
+    private val gson = Gson()
+    private var requestId = 1
 
     init {
         updateConfiguredModels()
@@ -64,6 +78,7 @@ class ChatViewModel(
         observeContextSummaries()
         loadOllamaState()
         loadRerankingState()
+        loadProjectHelperState()
     }
 
     fun onAction(action: ChatAction) {
@@ -82,6 +97,7 @@ class ChatViewModel(
             is ChatAction.SelectOllamaFile -> handleSelectOllamaFile(action.filePath)
             is ChatAction.RemoveOllamaFile -> handleRemoveOllamaFile(action.filePath)
             is ChatAction.ToggleReranking -> handleToggleReranking(action.enabled)
+            is ChatAction.ToggleProjectHelper -> handleToggleProjectHelper(action.enabled)
             is ChatAction.ExportJson -> handleExportJson()
             is ChatAction.DismissJsonExport -> handleDismissJsonExport()
         }
@@ -171,8 +187,28 @@ class ChatViewModel(
             }
 
             val ollamaEnabled = _uiState.value.ollamaEnabled
+            val projectHelperEnabled = _uiState.value.projectHelperEnabled
             
-            if (ollamaEnabled) {
+            // Проверяем команду /help
+            if (currentInput.startsWith("/help", ignoreCase = true)) {
+                val question = currentInput.removePrefix("/help").trim()
+                if (question.isNotBlank()) {
+                    handleHelpCommand(question, userMessage)
+                } else {
+                    _uiState.update { state ->
+                        state.copy(
+                            isLoading = false,
+                            error = "Please provide a question after /help"
+                        )
+                    }
+                }
+                return@launch
+            }
+            
+            // Если включен Project Helper + Ollama Vector Search, используем RAG с файлами проекта
+            if (projectHelperEnabled && ollamaEnabled) {
+                handleSendMessageWithProjectHelper(currentInput, userMessage)
+            } else if (ollamaEnabled) {
                 handleSendMessageWithOllama(currentInput, userMessage)
             } else {
                 handleSendMessageWithoutOllama(currentInput, userMessage)
@@ -606,6 +642,26 @@ class ChatViewModel(
         _uiState.update { it.copy(rerankingEnabled = enabled) }
     }
     
+    private fun loadProjectHelperState() {
+        val enabled = preferencesManager.projectHelperEnabled
+        _uiState.update { 
+            it.copy(projectHelperEnabled = enabled) 
+        }
+    }
+    
+    private fun handleToggleProjectHelper(enabled: Boolean) {
+        android.util.Log.d("ChatViewModel", "Toggle Project Helper: $enabled")
+        preferencesManager.projectHelperEnabled = enabled
+        _uiState.update { it.copy(projectHelperEnabled = enabled) }
+        
+        if (enabled) {
+            // При включении Project Helper запускаем индексацию .md файлов проекта
+            viewModelScope.launch {
+                indexProjectFiles()
+            }
+        }
+    }
+    
     private fun checkOllamaConnection() {
         viewModelScope.launch {
             try {
@@ -1005,6 +1061,310 @@ class ChatViewModel(
         } catch (e: Exception) {
             android.util.Log.e("ChatViewModel", "Error in evaluateRelevanceWithLlm", e)
             return 0.5f
+        }
+    }
+    
+    private suspend fun indexProjectFiles() {
+        try {
+            android.util.Log.d("ChatViewModel", "🚀 Starting project files indexing...")
+            
+            val request = JsonRpcRequest(
+                id = requestId++,
+                method = "tools/call",
+                params = mapOf(
+                    "name" to "index_project_files",
+                    "arguments" to emptyMap<String, Any>()
+                )
+            )
+            
+            val response = projectHelperMcpApi.sendRequest(request)
+            
+            if (response.isSuccessful && response.body() != null) {
+                val body = response.body()!!
+                if (body.error != null) {
+                    android.util.Log.e("ChatViewModel", "❌ MCP Error: ${body.error.message}")
+                    _events.emit(ChatEvent.ShowError("Indexing failed: ${body.error.message}"))
+                } else {
+                    val result = body.result
+                    val message = result?.get("content") as? String ?: "Project files indexed successfully"
+                    android.util.Log.i("ChatViewModel", "✅ Project files indexed: $message")
+                    _events.emit(ChatEvent.ShowError("✅ $message"))
+                }
+            } else {
+                val errorBody = response.errorBody()?.string() ?: "Unknown error"
+                android.util.Log.e("ChatViewModel", "❌ HTTP Error: ${response.code()} - $errorBody")
+                _events.emit(ChatEvent.ShowError("Indexing failed: HTTP ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "❌ Error indexing project files", e)
+            _events.emit(ChatEvent.ShowError("Error indexing project files: ${e.message}"))
+        }
+    }
+    
+    private suspend fun handleHelpCommand(question: String, userMessage: Message) {
+        try {
+            android.util.Log.d("ChatViewModel", "🔍 Processing /help command: $question")
+            
+            val request = JsonRpcRequest(
+                id = requestId++,
+                method = "tools/call",
+                params = mapOf(
+                    "name" to "search_project_files",
+                    "arguments" to mapOf(
+                        "query" to question,
+                        "reranking_enabled" to _uiState.value.rerankingEnabled
+                    )
+                )
+            )
+            
+            val response = projectHelperMcpApi.sendRequest(request)
+            
+            if (response.isSuccessful && response.body() != null) {
+                val body = response.body()!!
+                if (body.error != null) {
+                    android.util.Log.e("ChatViewModel", "❌ MCP Error: ${body.error.message}")
+                    _uiState.update { state ->
+                        state.copy(
+                            isLoading = false,
+                            error = "Search failed: ${body.error.message}"
+                        )
+                    }
+                    _events.emit(ChatEvent.ShowError("Search failed: ${body.error.message}"))
+                    return
+                }
+                
+                val result = body.result
+                // Парсим content из массива объектов (MCP формат)
+                val contentArray = result?.get("content") as? List<*>
+                val content = if (contentArray != null && contentArray.isNotEmpty()) {
+                    val firstContent = contentArray.firstOrNull() as? Map<*, *>
+                    firstContent?.get("text") as? String ?: firstContent?.get("content") as? String
+                } else {
+                    result?.get("content") as? String
+                }
+                
+                if (content != null && content.isNotBlank()) {
+                    android.util.Log.d("ChatViewModel", "✅ Found relevant context from project files: ${content.take(100)}...")
+                    
+                    // Извлекаем информацию об источнике и релевантности из content
+                    val sourceRegex = Regex("Источник:\\s*(.+)")
+                    val relevanceRegex = Regex("Релевантность:\\s*([0-9.]+)")
+                    val sourceMatch = sourceRegex.find(content)
+                    val relevanceMatch = relevanceRegex.find(content)
+                    val source = sourceMatch?.groupValues?.get(1)?.trim() ?: "Неизвестный источник"
+                    val relevance = relevanceMatch?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+                    
+                    // Убираем информацию об источнике и релевантности из контекста для промпта
+                    val cleanContent = content
+                        .replace(Regex("Источник:\\s*.+"), "")
+                        .replace(Regex("Релевантность:\\s*[0-9.]+"), "")
+                        .trim()
+                    
+                    val enhancedPrompt = buildString {
+                        appendLine("Based on the following context from project documentation, please answer the user's question.")
+                        appendLine()
+                        appendLine("=== RELEVANT CONTEXT FROM PROJECT ===")
+                        appendLine(cleanContent)
+                        appendLine("=== END OF CONTEXT ===")
+                        appendLine()
+                        appendLine("=== USER QUESTION ===")
+                        appendLine(question)
+                        appendLine("=== END OF QUESTION ===")
+                    }
+                    
+                    val messagesWithContext = listOf(
+                        ChatMessageDto(role = "user", content = enhancedPrompt)
+                    )
+                    
+                    sendMessageUseCase(
+                        model = _uiState.value.selectedModel,
+                        messages = messagesWithContext
+                    )
+                        .onSuccess { aiMessage ->
+                            val relevancePercent = (relevance * 100).toInt()
+                            val finalContent = buildString {
+                                appendLine(aiMessage.content)
+                                appendLine()
+                                appendLine("---")
+                                appendLine("📚 Источник: $source")
+                                appendLine("📊 Релевантность: ${relevance} (${relevancePercent}%)")
+                                appendLine("С Project Helper")
+                            }
+                            val finalMessage = aiMessage.copy(content = finalContent)
+                            chatRepository.saveMessage(finalMessage)
+                            handleCheckMessageThreshold(finalMessage)
+                            val updatedMessages = _uiState.value.messages + userMessage + finalMessage
+                            val comparison = compareModelMetricsUseCase(updatedMessages, question)
+                            _uiState.update { state ->
+                                state.copy(
+                                    isLoading = false,
+                                    metricsComparison = comparison
+                                )
+                            }
+                        }
+                        .onFailure { error ->
+                            android.util.Log.e("ChatViewModel", "Error sending message with project context", error)
+                            _uiState.update { state ->
+                                state.copy(
+                                    isLoading = false,
+                                    error = error.message ?: "Unknown error occurred"
+                                )
+                            }
+                            _events.emit(ChatEvent.ShowError(error.message ?: "Unknown error occurred"))
+                        }
+                } else {
+                    android.util.Log.w("ChatViewModel", "⚠️ No relevant context found")
+                    _uiState.update { state ->
+                        state.copy(
+                            isLoading = false,
+                            error = "No relevant information found in project files"
+                        )
+                    }
+                    _events.emit(ChatEvent.ShowError("No relevant information found in project files"))
+                }
+            } else {
+                val errorBody = response.errorBody()?.string() ?: "Unknown error"
+                android.util.Log.e("ChatViewModel", "❌ HTTP Error: ${response.code()} - $errorBody")
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = "Search failed: HTTP ${response.code()}"
+                    )
+                }
+                _events.emit(ChatEvent.ShowError("Search failed: HTTP ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "❌ Error processing /help command", e)
+            _uiState.update { state ->
+                state.copy(
+                    isLoading = false,
+                    error = e.message ?: "Unknown error occurred"
+                )
+            }
+            _events.emit(ChatEvent.ShowError("Error processing /help command: ${e.message}"))
+        }
+    }
+    
+    private suspend fun handleSendMessageWithProjectHelper(currentInput: String, userMessage: Message) {
+        try {
+            android.util.Log.d("ChatViewModel", "🔍 Processing message with Project Helper: $currentInput")
+            
+            val request = JsonRpcRequest(
+                id = requestId++,
+                method = "tools/call",
+                params = mapOf(
+                    "name" to "search_project_files",
+                    "arguments" to mapOf(
+                        "query" to currentInput,
+                        "reranking_enabled" to _uiState.value.rerankingEnabled
+                    )
+                )
+            )
+            
+            val response = projectHelperMcpApi.sendRequest(request)
+            
+            if (response.isSuccessful && response.body() != null) {
+                val body = response.body()!!
+                if (body.error != null) {
+                    android.util.Log.e("ChatViewModel", "❌ MCP Error: ${body.error.message}")
+                    // Fallback to regular Ollama if Project Helper fails
+                    handleSendMessageWithOllama(currentInput, userMessage)
+                    return
+                }
+                
+                val result = body.result
+                // Парсим content из массива объектов (MCP формат)
+                val contentArray = result?.get("content") as? List<*>
+                val content = if (contentArray != null && contentArray.isNotEmpty()) {
+                    val firstContent = contentArray.firstOrNull() as? Map<*, *>
+                    firstContent?.get("text") as? String ?: firstContent?.get("content") as? String
+                } else {
+                    result?.get("content") as? String
+                }
+                
+                if (content != null && content.isNotBlank()) {
+                    android.util.Log.d("ChatViewModel", "✅ Found relevant context from project files: ${content.take(100)}...")
+                    
+                    // Извлекаем информацию об источнике и релевантности из content
+                    val sourceRegex = Regex("Источник:\\s*(.+)")
+                    val relevanceRegex = Regex("Релевантность:\\s*([0-9.]+)")
+                    val sourceMatch = sourceRegex.find(content)
+                    val relevanceMatch = relevanceRegex.find(content)
+                    val source = sourceMatch?.groupValues?.get(1)?.trim() ?: "Неизвестный источник"
+                    val relevance = relevanceMatch?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+                    
+                    // Убираем информацию об источнике и релевантности из контекста для промпта
+                    val cleanContent = content
+                        .replace(Regex("Источник:\\s*.+"), "")
+                        .replace(Regex("Релевантность:\\s*[0-9.]+"), "")
+                        .trim()
+                    
+                    val enhancedPrompt = buildString {
+                        appendLine("Based on the following context from project documentation, please answer the user's question.")
+                        appendLine()
+                        appendLine("=== RELEVANT CONTEXT FROM PROJECT ===")
+                        appendLine(cleanContent)
+                        appendLine("=== END OF CONTEXT ===")
+                        appendLine()
+                        appendLine("=== USER QUESTION ===")
+                        appendLine(currentInput)
+                        appendLine("=== END OF QUESTION ===")
+                    }
+                    
+                    val messagesWithContext = listOf(
+                        ChatMessageDto(role = "user", content = enhancedPrompt)
+                    )
+                    
+                    sendMessageUseCase(
+                        model = _uiState.value.selectedModel,
+                        messages = messagesWithContext
+                    )
+                        .onSuccess { aiMessage ->
+                            val relevancePercent = (relevance * 100).toInt()
+                            val finalContent = buildString {
+                                appendLine(aiMessage.content)
+                                appendLine()
+                                appendLine("---")
+                                appendLine("📚 Источник: $source")
+                                appendLine("📊 Релевантность: ${relevance} (${relevancePercent}%)")
+                                appendLine("С Project Helper и Ollama")
+                            }
+                            val finalMessage = aiMessage.copy(content = finalContent)
+                            chatRepository.saveMessage(finalMessage)
+                            handleCheckMessageThreshold(finalMessage)
+                            val updatedMessages = _uiState.value.messages + userMessage + finalMessage
+                            val comparison = compareModelMetricsUseCase(updatedMessages, currentInput)
+                            _uiState.update { state ->
+                                state.copy(
+                                    isLoading = false,
+                                    metricsComparison = comparison
+                                )
+                            }
+                        }
+                        .onFailure { error ->
+                            android.util.Log.e("ChatViewModel", "Error sending message with project context", error)
+                            _uiState.update { state ->
+                                state.copy(
+                                    isLoading = false,
+                                    error = error.message ?: "Unknown error occurred"
+                                )
+                            }
+                            _events.emit(ChatEvent.ShowError(error.message ?: "Unknown error occurred"))
+                        }
+                } else {
+                    android.util.Log.w("ChatViewModel", "⚠️ No relevant context found, falling back to regular Ollama")
+                    // Fallback to regular Ollama if no context found
+                    handleSendMessageWithOllama(currentInput, userMessage)
+                }
+            } else {
+                android.util.Log.w("ChatViewModel", "⚠️ Project Helper request failed, falling back to regular Ollama")
+                // Fallback to regular Ollama if request fails
+                handleSendMessageWithOllama(currentInput, userMessage)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "❌ Error processing message with Project Helper", e)
+            // Fallback to regular Ollama on error
+            handleSendMessageWithOllama(currentInput, userMessage)
         }
     }
     

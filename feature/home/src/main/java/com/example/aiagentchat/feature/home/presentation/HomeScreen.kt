@@ -188,6 +188,10 @@ fun HomeScreen(
             },
             ollamaEnabled = state.ollamaEnabled,
             ollamaSelectedFiles = state.ollamaSelectedFiles,
+            projectHelperEnabled = state.projectHelperEnabled,
+            onProjectHelperToggle = { enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleProjectHelper(enabled))
+            },
             onOllamaSelectFile = {
                 // Проверяем разрешения перед открытием file picker
                 val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

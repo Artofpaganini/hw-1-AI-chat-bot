@@ -19,6 +19,7 @@
             <option value="$PROJECT_DIR$/feature" />
             <option value="$PROJECT_DIR$/feature/chat" />
             <option value="$PROJECT_DIR$/feature/home" />
+            <option value="$PROJECT_DIR$/project-helper-mcp-server" />
           </set>
         </option>
       </GradleProjectSettings>

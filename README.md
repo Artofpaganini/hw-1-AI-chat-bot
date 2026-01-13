@@ -43,6 +43,37 @@ OPENROUTER_API_KEY=your_openrouter_api_key_here
 CONTEXT7_API_KEY=your_context7_api_key_here
 ```
 
+## Project Helper - Ассистент разработчика
+
+Проект поддерживает ассистента разработчика, который работает с .md файлами текущего проекта.
+
+### Настройка Project Helper
+
+1. **Запустите Ollama сервер (ОБЯЗАТЕЛЬНО!):**
+   ```bash
+   ./setup-ollama.sh
+   ```
+
+2. **Запустите Project Helper MCP Server:**
+   ```bash
+   cd project-helper-mcp-server
+   ./start-server.sh [PORT] [PROJECT_ROOT] [OLLAMA_URL]
+   
+   # Пример (по умолчанию):
+   ./start-server.sh 8081 /Users/Victor/work/hw-1-AI-chat-bot http://localhost:11434
+   ```
+
+3. **В приложении:**
+   - Откройте настройки (⚙️)
+   - Включите "Project helper" (switcher)
+   - При включении автоматически индексируются все .md файлы проекта
+
+4. **Использование:**
+   - Введите `/help ваш вопрос` в чате для получения ответа на основе документации проекта
+   - При включенном Project Helper + Ollama Vector Search все запросы используют RAG с файлами проекта
+
+Подробнее см. [20HW_PROJECT_ASSISTENT.md](20HW_PROJECT_ASSISTENT.md)
+
 ## Ollama Vector Search
 
 Проект поддерживает векторный поиск с использованием Ollama для индексации документов и семантического поиска в чате.

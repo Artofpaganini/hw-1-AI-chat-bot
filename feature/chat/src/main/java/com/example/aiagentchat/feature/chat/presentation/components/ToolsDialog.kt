@@ -50,7 +50,9 @@ fun ToolsDialog(
     onOllamaSelectFile: () -> Unit = {},
     onOllamaRemoveFile: (String) -> Unit = {},
     rerankingEnabled: Boolean = false,
-    onRerankingToggle: (Boolean) -> Unit = {}
+    onRerankingToggle: (Boolean) -> Unit = {},
+    projectHelperEnabled: Boolean = false,
+    onProjectHelperToggle: (Boolean) -> Unit = {}
 ) {
     BasicAlertDialog(
         onDismissRequest = onDismiss,
@@ -102,6 +104,12 @@ fun ToolsDialog(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     item {
+                        ProjectHelperItem(
+                            enabled = projectHelperEnabled,
+                            onToggle = onProjectHelperToggle
+                        )
+                    }
+                    item {
                         OllamaItem(
                             enabled = ollamaEnabled,
                             onToggle = onOllamaToggle,
@@ -109,10 +117,56 @@ fun ToolsDialog(
                             onRemoveFile = onOllamaRemoveFile,
                             onSelectFile = onOllamaSelectFile,
                             rerankingEnabled = rerankingEnabled,
-                            onRerankingToggle = onRerankingToggle
+                            onRerankingToggle = onRerankingToggle,
+                            projectHelperEnabled = projectHelperEnabled
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProjectHelperItem(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "Project helper",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Enable project assistant. Works with .md files from current project. No file limit.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onToggle
+                )
             }
         }
     }
@@ -126,7 +180,8 @@ private fun OllamaItem(
     onSelectFile: () -> Unit = {},
     onRemoveFile: (String) -> Unit = {},
     rerankingEnabled: Boolean = false,
-    onRerankingToggle: (Boolean) -> Unit = {}
+    onRerankingToggle: (Boolean) -> Unit = {},
+    projectHelperEnabled: Boolean = false
 ) {
     Surface(
         shape = MaterialTheme.shapes.medium,
@@ -165,7 +220,7 @@ private fun OllamaItem(
                 )
             }
             
-            if (enabled) {
+            if (enabled && !projectHelperEnabled) {
                 HorizontalDivider(
                     modifier = Modifier.padding(vertical = 12.dp),
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
