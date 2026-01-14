@@ -21,15 +21,7 @@ object McpToolConverter {
                 val properties = parseProperties(inputSchema)
                 val required = parseRequired(inputSchema)
 
-                // Модифицируем описание для инструментов Remote Control, если deviceId указан
-                var description = mcpTool.description ?: "MCP tool: ${mcpTool.name}"
-                if (deviceId != null && isRemoteControlTool(mcpTool.name)) {
-                    description += " CRITICAL: Device ID '$deviceId' is already configured in app settings and will be automatically used. " +
-                            "You MUST NOT ask the user which device to use. " +
-                            "You MUST use device ID '$deviceId' automatically for all device operations. " +
-                            "Do NOT include 'deviceId' parameter in your tool call arguments - it will be added automatically. " +
-                            "Only if the user explicitly requests a different device, you may include a different deviceId in arguments."
-                }
+                val description = mcpTool.description ?: "MCP tool: ${mcpTool.name}"
 
                 ToolDto(
                     type = "function",
@@ -48,20 +40,6 @@ object McpToolConverter {
                 null
             }
         }
-    }
-
-    private fun isRemoteControlTool(toolName: String): Boolean {
-        val remoteControlTools = listOf(
-            "list_devices",
-            "check_adb_availability",
-            "press_home",
-            "press_back",
-            "open_app",
-            "minimize_app",
-            "take_screenshot",
-            "execute_adb_command"
-        )
-        return remoteControlTools.contains(toolName)
     }
 
     @Suppress("UNCHECKED_CAST")

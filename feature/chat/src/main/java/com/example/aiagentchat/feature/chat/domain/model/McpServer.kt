@@ -8,33 +8,7 @@ data class McpServer(
     val tools: List<McpTool> = emptyList()
 ) {
     companion object {
-        const val WEATHER_SERVER_ID = "weather-mcp-server"
-        const val GOOGLE_STORAGE_SERVER_ID = "google-storage-mcp-server"
-        const val REMOTE_CONTROL_SERVER_ID = "remote-control-mcp-server"
-        
-        val DEFAULT_SERVERS = listOf(
-            McpServer(
-                id = WEATHER_SERVER_ID,
-                name = "Weather MCP Server",
-                baseUrl = "http://10.0.2.2",
-                port = 8080,
-                tools = emptyList()
-            ),
-            McpServer(
-                id = GOOGLE_STORAGE_SERVER_ID,
-                name = "Google Storage MCP Server",
-                baseUrl = "http://10.0.2.2",
-                port = 8081,
-                tools = emptyList()
-            ),
-            McpServer(
-                id = REMOTE_CONTROL_SERVER_ID,
-                name = "Remote Control MCP Server",
-                baseUrl = "http://10.0.2.2",
-                port = 8082,
-                tools = emptyList()
-            )
-        )
+        val DEFAULT_SERVERS = emptyList<McpServer>()
     }
     
     fun getFullUrl(): String {

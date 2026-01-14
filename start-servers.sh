@@ -22,27 +22,6 @@ fi
 
 echo "Starting all MCP servers..."
 
-# Запуск Weather MCP Server в фоне
-echo "Starting Weather MCP Server on port 8080..."
-cd weather-mcp-server
-./start-server.sh 8080 > /tmp/weather-mcp-server.log 2>&1 &
-WEATHER_PID=$!
-cd ..
-
-# Запуск Google Storage MCP Server в фоне
-echo "Starting Google Storage MCP Server on port 8081..."
-cd google-storage-mcp-server
-./start-server.sh 8081 > /tmp/google-storage-mcp-server.log 2>&1 &
-GOOGLE_PID=$!
-cd ..
-
-# Запуск Remote Control MCP Server в фоне
-echo "Starting Remote Control MCP Server on port 8082..."
-cd remote-control-mcp-server
-./start-server.sh 8082 > /tmp/remote-control-mcp-server.log 2>&1 &
-CONTROL_PID=$!
-cd ..
-
 # Запуск GitHub MCP Server в фоне
 echo "Starting GitHub MCP Server on port 8083..."
 cd github-mcp-server
@@ -57,28 +36,31 @@ cd git-mcp-server
 GIT_PID=$!
 cd ..
 
+# Запуск User Format MCP Server в фоне
+echo "Starting User Format MCP Server on port 8085..."
+cd user-format-mcp-server
+./start-server.sh 8085 > /tmp/user-format-mcp-server.log 2>&1 &
+USER_FORMAT_PID=$!
+cd ..
+
 echo ""
 echo "Servers started:"
-echo "  Weather MCP Server: PID $WEATHER_PID (port 8080)"
-echo "  Google Storage MCP Server: PID $GOOGLE_PID (port 8081)"
-echo "  Remote Control MCP Server: PID $CONTROL_PID (port 8082)"
 echo "  GitHub MCP Server: PID $GITHUB_PID (port 8083)"
 echo "  Git MCP Server: PID $GIT_PID (port 8084)"
+echo "  User Format MCP Server: PID $USER_FORMAT_PID (port 8085)"
 echo ""
 echo "Logs:"
-echo "  Weather: /tmp/weather-mcp-server.log"
-echo "  Google Storage: /tmp/google-storage-mcp-server.log"
-echo "  Remote Control: /tmp/remote-control-mcp-server.log"
 echo "  GitHub: /tmp/github-mcp-server.log"
 echo "  Git: /tmp/git-mcp-server.log"
+echo "  User Format: /tmp/user-format-mcp-server.log"
 echo ""
 echo "To stop servers, run:"
-echo "  kill $WEATHER_PID $GOOGLE_PID $CONTROL_PID $GITHUB_PID $GIT_PID"
+echo "  kill $GITHUB_PID $GIT_PID $USER_FORMAT_PID"
 echo ""
 echo "Press Ctrl+C to stop all servers"
 
 # Ожидание сигнала завершения
-trap "kill $WEATHER_PID $GOOGLE_PID $CONTROL_PID $GITHUB_PID $GIT_PID 2>/dev/null; exit" INT TERM
+trap "kill $GITHUB_PID $GIT_PID $USER_FORMAT_PID 2>/dev/null; exit" INT TERM
 
 # Ожидание завершения процессов
 wait

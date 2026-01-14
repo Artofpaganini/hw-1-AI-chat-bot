@@ -74,7 +74,7 @@ emulator -avd <your_avd_name> -wipe-data
    ```
 
 3. **Проверьте, что оба подключения работают:**
-   - Локальный MCP сервер: `http://10.0.2.2:8080/mcp`
+   - Локальный MCP сервер: `http://10.0.2.2:8081/mcp` (Project Helper) или `http://10.0.2.2:8085/mcp` (User Format)
    - Интернет API: `https://api.deepseek.com/`
 
 ## Важные замечания
@@ -88,5 +88,5 @@ emulator -avd <your_avd_name> -wipe-data
 1. Проверьте, что на хосте есть интернет
 2. Перезапустите эмулятор
 3. Проверьте логи приложения на наличие ошибок DNS
-4. Убедитесь, что MCP серверы запущены (Weather MCP Server на порту 8080, Google Storage MCP Server на порту 8081)
+4. Убедитесь, что необходимые MCP серверы запущены (Project Helper MCP Server на порту 8081, User Format MCP Server на порту 8085)
 

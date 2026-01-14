@@ -56,7 +56,13 @@ fun ToolsDialog(
     githubMcpEnabled: Boolean = false,
     onGitHubMcpToggle: (Boolean) -> Unit = {},
     projectReviewModeEnabled: Boolean = false,
-    onProjectReviewModeToggle: (Boolean) -> Unit = {}
+    onProjectReviewModeToggle: (Boolean) -> Unit = {},
+    projectUserAssistantEnabled: Boolean = false,
+    onProjectUserAssistantToggle: (Boolean) -> Unit = {},
+    userFormatType: String = "программист",
+    onUserFormatTypeChange: (String) -> Unit = {},
+    projectFilesEnabled: Boolean = false,
+    onProjectFilesToggle: (Boolean) -> Unit = {}
 ) {
     BasicAlertDialog(
         onDismissRequest = onDismiss,
@@ -114,6 +120,16 @@ fun ToolsDialog(
                         )
                     }
                     item {
+                        ProjectUserAssistantItem(
+                            enabled = projectUserAssistantEnabled,
+                            onToggle = onProjectUserAssistantToggle,
+                            userFormatType = userFormatType,
+                            onUserFormatTypeChange = onUserFormatTypeChange,
+                            projectFilesEnabled = projectFilesEnabled,
+                            onProjectFilesToggle = onProjectFilesToggle
+                        )
+                    }
+                    item {
                         OllamaItem(
                             enabled = ollamaEnabled,
                             onToggle = onOllamaToggle,
@@ -123,7 +139,8 @@ fun ToolsDialog(
                             rerankingEnabled = rerankingEnabled,
                             onRerankingToggle = onRerankingToggle,
                             projectHelperEnabled = projectHelperEnabled,
-                            projectReviewModeEnabled = projectReviewModeEnabled
+                            projectReviewModeEnabled = projectReviewModeEnabled,
+                            projectUserAssistantEnabled = projectUserAssistantEnabled
                         )
                     }
                     item {
@@ -199,7 +216,8 @@ private fun OllamaItem(
     rerankingEnabled: Boolean = false,
     onRerankingToggle: (Boolean) -> Unit = {},
     projectHelperEnabled: Boolean = false,
-    projectReviewModeEnabled: Boolean = false
+    projectReviewModeEnabled: Boolean = false,
+    projectUserAssistantEnabled: Boolean = false
 ) {
     Surface(
         shape = MaterialTheme.shapes.medium,
@@ -238,7 +256,7 @@ private fun OllamaItem(
                 )
             }
             
-            if (enabled && !projectHelperEnabled && !projectReviewModeEnabled) {
+            if (enabled && !projectHelperEnabled && !projectReviewModeEnabled && !projectUserAssistantEnabled) {
                 HorizontalDivider(
                     modifier = Modifier.padding(vertical = 12.dp),
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
@@ -437,6 +455,108 @@ private fun ProjectReviewModeItem(
                     checked = enabled,
                     onCheckedChange = onToggle
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProjectUserAssistantItem(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+    userFormatType: String,
+    onUserFormatTypeChange: (String) -> Unit,
+    projectFilesEnabled: Boolean,
+    onProjectFilesToggle: (Boolean) -> Unit
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "Project User Assistant",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Enable automated assistant for user support. Adapts responses based on user type (programmer, child, housewife, etc.).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onToggle
+                )
+            }
+            
+            if (enabled) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 12.dp),
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                )
+                
+                Column {
+                    OutlinedTextField(
+                        value = userFormatType,
+                        onValueChange = onUserFormatTypeChange,
+                        label = { Text("User Format Type") },
+                        placeholder = { Text("программист") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Text(
+                        text = "Specify user type (e.g., 'Ребенок 8 лет', 'программист', 'домохозяйка'). Default: 'программист'",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = "Project Files",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                            Text(
+                                text = "Enable work with project files (.md, .kt, .xml, .java, .kts, .sh) from current codebase",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = projectFilesEnabled,
+                            onCheckedChange = onProjectFilesToggle
+                        )
+                    }
+                }
             }
         }
     }

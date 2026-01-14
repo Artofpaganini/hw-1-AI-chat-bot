@@ -19,6 +19,9 @@ class PreferencesManager(context: Context) {
         private const val KEY_GITHUB_MCP_ENABLED = "github_mcp_enabled"
         private const val KEY_PROJECT_REVIEW_MODE_ENABLED = "project_review_mode_enabled"
         private const val KEY_PROJECT_ROOT_PATH = "project_root_path"
+        private const val KEY_PROJECT_USER_ASSISTANT_ENABLED = "project_user_assistant_enabled"
+        private const val KEY_USER_FORMAT_TYPE = "user_format_type"
+        private const val KEY_PROJECT_FILES_ENABLED = "project_files_enabled"
     }
 
     var lastUserQuery: String?
@@ -77,5 +80,17 @@ class PreferencesManager(context: Context) {
     var projectRootPath: String?
         get() = prefs.getString(KEY_PROJECT_ROOT_PATH, null)
         set(value) = prefs.edit().putString(KEY_PROJECT_ROOT_PATH, value).apply()
+    
+    var projectUserAssistantEnabled: Boolean
+        get() = prefs.getBoolean(KEY_PROJECT_USER_ASSISTANT_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_PROJECT_USER_ASSISTANT_ENABLED, value).apply()
+    
+    var userFormatType: String
+        get() = prefs.getString(KEY_USER_FORMAT_TYPE, "программист") ?: "программист"
+        set(value) = prefs.edit().putString(KEY_USER_FORMAT_TYPE, value).apply()
+    
+    var projectFilesEnabled: Boolean
+        get() = prefs.getBoolean(KEY_PROJECT_FILES_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_PROJECT_FILES_ENABLED, value).apply()
 }
 

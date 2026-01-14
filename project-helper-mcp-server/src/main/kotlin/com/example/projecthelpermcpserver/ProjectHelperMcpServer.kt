@@ -577,14 +577,14 @@ fun main(args: Array<String>) {
                                                             IndexedChunk(chunk, similarity)
                                                         }
                                                         .sortedByDescending { it.relevance }
-                                                        .take(if (rerankingEnabled) 20 else 10) // Для reranking берем больше кандидатов
+                                                        .take(10) // Для reranking берем больше кандидатов
                                                     
                                                     val finalChunks = if (rerankingEnabled && initialCandidates.isNotEmpty()) {
                                                         logger.log(Level.INFO, "Performing reranking for ${initialCandidates.size} candidates...")
                                                         // Выполняем reranking для всех кандидатов
                                                         val reranked = performReranking(query, initialCandidates.map { it.chunk }, ollamaUrl)
                                                         // После reranking берем топ-10 самых релевантных (отсортированы по убыванию, где 1.0 - максимальная релевантность)
-                                                        reranked.take(10)
+                                                        reranked.take(5)
                                                     } else {
                                                         // Без reranking используем топ-10 по косинусному сходству
                                                         initialCandidates.take(10)

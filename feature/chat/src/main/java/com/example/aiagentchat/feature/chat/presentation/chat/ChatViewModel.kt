@@ -23,6 +23,7 @@ import com.example.aiagentchat.feature.chat.data.repository.ReviewRepository
 import com.example.aiagentchat.feature.chat.data.api.OllamaApi
 import com.example.aiagentchat.feature.chat.data.api.ProjectHelperMcpApi
 import com.example.aiagentchat.feature.chat.data.api.GitHubMcpApi
+import com.example.aiagentchat.feature.chat.data.api.UserFormatMcpApi
 import com.example.aiagentchat.feature.chat.data.api.JsonRpcRequest
 import com.example.aiagentchat.feature.chat.data.api.JsonRpcResponse
 import com.example.aiagentchat.core.network.ApiClient
@@ -87,6 +88,12 @@ class ChatViewModel(
         }
     }
     
+    private val userFormatMcpApi: UserFormatMcpApi by lazy {
+        val baseUrl = "http://10.0.2.2:8085/"
+        val retrofit = ApiClient.createRetrofit(baseUrl)
+        retrofit.create(UserFormatMcpApi::class.java)
+    }
+    
     private val gson = Gson()
     private var requestId = 1
 
@@ -100,6 +107,9 @@ class ChatViewModel(
         loadProjectHelperState()
         loadGitHubMcpState()
         loadProjectReviewModeState()
+        loadProjectUserAssistantState()
+        loadUserFormatTypeState()
+        loadProjectFilesState()
     }
 
     fun onAction(action: ChatAction) {
@@ -123,6 +133,9 @@ class ChatViewModel(
             is ChatAction.DismissJsonExport -> handleDismissJsonExport()
             is ChatAction.ToggleGitHubMcp -> handleToggleGitHubMcp(action.enabled)
             is ChatAction.ToggleProjectReviewMode -> handleToggleProjectReviewMode(action.enabled)
+            is ChatAction.ToggleProjectUserAssistant -> handleToggleProjectUserAssistant(action.enabled)
+            is ChatAction.SetUserFormatType -> handleSetUserFormatType(action.formatType)
+            is ChatAction.ToggleProjectFiles -> handleToggleProjectFiles(action.enabled)
         }
     }
     
@@ -234,8 +247,13 @@ class ChatViewModel(
                 return@launch
             }
             
-            // Если включен Project Helper + Ollama Vector Search, используем RAG с файлами проекта
-            if (projectHelperEnabled && ollamaEnabled) {
+            val projectUserAssistantEnabled = _uiState.value.projectUserAssistantEnabled
+            val projectFilesEnabled = _uiState.value.projectFilesEnabled
+            
+            // Если включен Project User Assistant + Ollama + Project Files, используем RAG + MCP фильтрацию
+            if (projectUserAssistantEnabled && ollamaEnabled && projectFilesEnabled) {
+                handleSendMessageWithProjectUserAssistant(currentInput, userMessage)
+            } else if (projectHelperEnabled && ollamaEnabled) {
                 handleSendMessageWithProjectHelper(currentInput, userMessage)
             } else if (ollamaEnabled) {
                 handleSendMessageWithOllama(currentInput, userMessage)
@@ -506,7 +524,33 @@ class ChatViewModel(
     private fun handleClearChat() {
         viewModelScope.launch {
             chatRepository.deleteAllMessages()
-            _uiState.update { it.copy(messages = emptyList(), metricsComparison = null) }
+            
+            // Сбрасываем все tools настройки в false
+            preferencesManager.ollamaEnabled = false
+            preferencesManager.rerankingEnabled = false
+            preferencesManager.projectHelperEnabled = false
+            preferencesManager.githubMcpEnabled = false
+            preferencesManager.projectReviewModeEnabled = false
+            preferencesManager.projectUserAssistantEnabled = false
+            preferencesManager.projectFilesEnabled = false
+            preferencesManager.ollamaSelectedFiles = emptyList()
+            preferencesManager.userFormatType = "программист"
+            
+            _uiState.update { 
+                it.copy(
+                    messages = emptyList(), 
+                    metricsComparison = null,
+                    ollamaEnabled = false,
+                    rerankingEnabled = false,
+                    projectHelperEnabled = false,
+                    githubMcpEnabled = false,
+                    projectReviewModeEnabled = false,
+                    projectUserAssistantEnabled = false,
+                    projectFilesEnabled = false,
+                    ollamaSelectedFiles = emptyList(),
+                    userFormatType = "программист"
+                ) 
+            }
         }
     }
 
@@ -683,12 +727,7 @@ class ChatViewModel(
         preferencesManager.projectHelperEnabled = enabled
         _uiState.update { it.copy(projectHelperEnabled = enabled) }
         
-        if (enabled) {
-            // При включении Project Helper запускаем индексацию .md файлов проекта
-            viewModelScope.launch {
-                indexProjectFiles()
-            }
-        }
+        // Индексация будет выполнена при первом использовании, а не при включении
     }
     
     private fun checkOllamaConnection() {
@@ -1093,9 +1132,39 @@ class ChatViewModel(
         }
     }
     
+    private suspend fun checkProjectHelperServerAvailable(): Boolean {
+        return try {
+            val testRequest = JsonRpcRequest(
+                id = requestId++,
+                method = "initialize",
+                params = emptyMap()
+            )
+            val response = projectHelperMcpApi.sendRequest(testRequest)
+            response.isSuccessful && response.body() != null
+        } catch (e: Exception) {
+            android.util.Log.w("ChatViewModel", "Project Helper MCP Server not available: ${e.message}")
+            false
+        }
+    }
+    
     private suspend fun indexProjectFiles() {
         try {
             android.util.Log.d("ChatViewModel", "🚀 Starting project files indexing...")
+            
+            // Проверяем доступность сервера
+            if (!checkProjectHelperServerAvailable()) {
+                android.util.Log.e("ChatViewModel", "❌ Project Helper MCP Server is not available for indexing")
+                _events.emit(ChatEvent.ShowError(
+                    "Project Helper MCP Server не запущен.\n\n" +
+                    "Для индексации файлов проекта необходимо:\n" +
+                    "1. Запустить Project Helper MCP Server:\n" +
+                    "   cd project-helper-mcp-server\n" +
+                    "   ./start-server.sh 8081\n\n" +
+                    "2. Убедиться, что Ollama запущен:\n" +
+                    "   ollama serve"
+                ))
+                return
+            }
             
             val request = JsonRpcRequest(
                 id = requestId++,
@@ -1106,7 +1175,26 @@ class ChatViewModel(
                 )
             )
             
-            val response = projectHelperMcpApi.sendRequest(request)
+            val response = try {
+                projectHelperMcpApi.sendRequest(request)
+            } catch (e: java.net.ConnectException) {
+                android.util.Log.e("ChatViewModel", "❌ Cannot connect to Project Helper MCP Server (port 8081). Make sure the server is running.", e)
+                _events.emit(ChatEvent.ShowError(
+                    "Не удалось подключиться к Project Helper MCP Server (порт 8081).\n\n" +
+                    "Убедитесь, что сервер запущен:\n" +
+                    "cd project-helper-mcp-server\n" +
+                    "./start-server.sh 8081"
+                ))
+                return
+            } catch (e: java.net.SocketTimeoutException) {
+                android.util.Log.e("ChatViewModel", "❌ Timeout connecting to Project Helper MCP Server", e)
+                _events.emit(ChatEvent.ShowError("Таймаут подключения к Project Helper MCP Server. Проверьте, что сервер запущен и доступен."))
+                return
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "❌ Error connecting to Project Helper MCP Server", e)
+                _events.emit(ChatEvent.ShowError("Ошибка подключения к Project Helper MCP Server: ${e.message}"))
+                return
+            }
             
             if (response.isSuccessful && response.body() != null) {
                 val body = response.body()!!
@@ -1146,7 +1234,39 @@ class ChatViewModel(
                 )
             )
             
-            val response = projectHelperMcpApi.sendRequest(request)
+            val response = try {
+                projectHelperMcpApi.sendRequest(request)
+            } catch (e: java.net.ConnectException) {
+                android.util.Log.e("ChatViewModel", "❌ Cannot connect to Project Helper MCP Server (port 8081). Make sure the server is running.", e)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = "Project Helper MCP Server is not available. Please start the server (port 8081) or use regular chat mode."
+                    )
+                }
+                _events.emit(ChatEvent.ShowError("Project Helper MCP Server is not available. Please start the server (port 8081)."))
+                return
+            } catch (e: java.net.SocketTimeoutException) {
+                android.util.Log.e("ChatViewModel", "❌ Timeout connecting to Project Helper MCP Server", e)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = "Connection timeout to Project Helper MCP Server. Please check the server."
+                    )
+                }
+                _events.emit(ChatEvent.ShowError("Connection timeout to Project Helper MCP Server."))
+                return
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "❌ Error connecting to Project Helper MCP Server", e)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = "Error connecting to Project Helper MCP Server: ${e.message}"
+                    )
+                }
+                _events.emit(ChatEvent.ShowError("Error connecting to Project Helper MCP Server: ${e.message}"))
+                return
+            }
             
             if (response.isSuccessful && response.body() != null) {
                 val body = response.body()!!
@@ -1274,6 +1394,273 @@ class ChatViewModel(
         }
     }
     
+    private suspend fun handleSendMessageWithProjectUserAssistant(currentInput: String, userMessage: Message) {
+        try {
+            android.util.Log.d("ChatViewModel", "🔍 Processing message with Project User Assistant: $currentInput")
+            
+            // Проверяем доступность сервера перед использованием
+            if (!checkProjectHelperServerAvailable()) {
+                android.util.Log.e("ChatViewModel", "❌ Project Helper MCP Server is not available")
+                _events.emit(ChatEvent.ShowError(
+                    "Project Helper MCP Server не запущен.\n\n" +
+                    "Для работы Project User Assistant необходимо:\n" +
+                    "1. Запустить Project Helper MCP Server:\n" +
+                    "   cd project-helper-mcp-server\n" +
+                    "   ./start-server.sh 8081\n\n" +
+                    "2. Убедиться, что Ollama запущен:\n" +
+                    "   ollama serve"
+                ))
+                _uiState.update { state ->
+                    state.copy(isLoading = false)
+                }
+                return
+            }
+            
+            // Шаг 1: RAG через Project Helper MCP (использует embedding/reranking внутри)
+            val rerankingEnabled = _uiState.value.rerankingEnabled
+            android.util.Log.d("ChatViewModel", "🔍 Using RAG with embedding/reranking: rerankingEnabled=$rerankingEnabled")
+            
+            val request = JsonRpcRequest(
+                id = requestId++,
+                method = "tools/call",
+                params = mapOf(
+                    "name" to "search_project_files",
+                    "arguments" to mapOf(
+                        "query" to currentInput,
+                        "reranking_enabled" to rerankingEnabled
+                    )
+                )
+            )
+            
+            val response = try {
+                projectHelperMcpApi.sendRequest(request)
+            } catch (e: java.net.ConnectException) {
+                android.util.Log.e("ChatViewModel", "❌ Cannot connect to Project Helper MCP Server (port 8081). Make sure the server is running.", e)
+                _events.emit(ChatEvent.ShowError(
+                    "Не удалось подключиться к Project Helper MCP Server (порт 8081).\n\n" +
+                    "Убедитесь, что сервер запущен:\n" +
+                    "cd project-helper-mcp-server\n" +
+                    "./start-server.sh 8081"
+                ))
+                _uiState.update { state ->
+                    state.copy(isLoading = false)
+                }
+                return
+            } catch (e: java.net.SocketTimeoutException) {
+                android.util.Log.e("ChatViewModel", "❌ Timeout connecting to Project Helper MCP Server", e)
+                _events.emit(ChatEvent.ShowError("Таймаут подключения к Project Helper MCP Server. Проверьте, что сервер запущен и доступен."))
+                _uiState.update { state ->
+                    state.copy(isLoading = false)
+                }
+                return
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "❌ Error connecting to Project Helper MCP Server", e)
+                _events.emit(ChatEvent.ShowError("Ошибка подключения к Project Helper MCP Server: ${e.message}"))
+                _uiState.update { state ->
+                    state.copy(isLoading = false)
+                }
+                return
+            }
+            
+            if (!response.isSuccessful || response.body() == null) {
+                android.util.Log.e("ChatViewModel", "❌ Project Helper MCP HTTP Error: ${response.code()}")
+                handleSendMessageWithOllama(currentInput, userMessage)
+                return
+            }
+            
+            val body = response.body()!!
+            if (body.error != null) {
+                val errorMessage = body.error?.message ?: "Unknown error"
+                android.util.Log.e("ChatViewModel", "❌ Project Helper MCP Error: $errorMessage")
+                
+                // Если файлы не проиндексированы, выполняем индексацию и повторяем запрос
+                if (errorMessage.contains("not indexed", ignoreCase = true)) {
+                    android.util.Log.d("ChatViewModel", "📚 Project files not indexed. Starting indexing...")
+                    indexProjectFiles()
+                    
+                    // Повторяем запрос после индексации
+                    val retryRequest = JsonRpcRequest(
+                        id = requestId++,
+                        method = "tools/call",
+                        params = mapOf(
+                            "name" to "search_project_files",
+                            "arguments" to mapOf(
+                                "query" to currentInput,
+                                "reranking_enabled" to rerankingEnabled
+                            )
+                        )
+                    )
+                    
+                    val retryResponse = try {
+                        projectHelperMcpApi.sendRequest(retryRequest)
+                    } catch (e: Exception) {
+                        android.util.Log.e("ChatViewModel", "❌ Error on retry after indexing", e)
+                        handleSendMessageWithOllama(currentInput, userMessage)
+                        return
+                    }
+                    
+                    if (!retryResponse.isSuccessful || retryResponse.body() == null || retryResponse.body()!!.error != null) {
+                        android.util.Log.e("ChatViewModel", "❌ Project Helper MCP Error after indexing")
+                        handleSendMessageWithOllama(currentInput, userMessage)
+                        return
+                    }
+                    
+                    // Продолжаем обработку с retryResponse
+                    processProjectUserAssistantResponse(retryResponse.body()!!, currentInput, userMessage, rerankingEnabled)
+                    return
+                } else {
+                    // Другие ошибки - fallback
+                    handleSendMessageWithOllama(currentInput, userMessage)
+                    return
+                }
+            }
+            
+            processProjectUserAssistantResponse(body, currentInput, userMessage, rerankingEnabled)
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "❌ Error in handleSendMessageWithProjectUserAssistant", e)
+            _uiState.update { state ->
+                state.copy(
+                    isLoading = false,
+                    error = e.message ?: "Unknown error occurred"
+                )
+            }
+            _events.emit(ChatEvent.ShowError("Error: ${e.message}"))
+        }
+    }
+    
+    private suspend fun processProjectUserAssistantResponse(
+        body: JsonRpcResponse,
+        currentInput: String,
+        userMessage: Message,
+        rerankingEnabled: Boolean
+    ) {
+        val result = body.result
+        val contentArray = result?.get("content") as? List<*>
+        val content = if (contentArray != null && contentArray.isNotEmpty()) {
+            val firstContent = contentArray.firstOrNull() as? Map<*, *>
+            firstContent?.get("text") as? String ?: firstContent?.get("content") as? String
+        } else {
+            result?.get("content") as? String
+        }
+        
+        if (content == null || content.isBlank()) {
+            android.util.Log.w("ChatViewModel", "⚠️ No relevant context found")
+            _uiState.update { state ->
+                state.copy(
+                    isLoading = false,
+                    error = "No relevant information found in project files"
+                )
+            }
+            _events.emit(ChatEvent.ShowError("No relevant information found in project files"))
+            return
+        }
+        
+        android.util.Log.d("ChatViewModel", "✅ Found relevant context from project files (reranking=$rerankingEnabled)")
+        
+        // Убираем информацию об источнике и релевантности из контекста для промпта
+        val cleanContent = content
+            .replace(Regex("Источник:\\s*.+"), "")
+            .replace(Regex("Релевантность:\\s*[0-9.]+"), "")
+            .trim()
+        
+        // Шаг 2: Получаем ответ от AI
+        val enhancedPrompt = buildString {
+            appendLine("Based on the following context from project documentation, please answer the user's question.")
+            appendLine()
+            appendLine("=== RELEVANT CONTEXT FROM PROJECT ===")
+            appendLine(cleanContent)
+            appendLine("=== END OF CONTEXT ===")
+            appendLine()
+            appendLine("=== USER QUESTION ===")
+            appendLine(currentInput)
+            appendLine("=== END OF QUESTION ===")
+        }
+        
+        val messagesWithContext = listOf(
+            ChatMessageDto(role = "user", content = enhancedPrompt)
+        )
+        
+        val aiResponse = sendMessageUseCase(
+            model = _uiState.value.selectedModel,
+            messages = messagesWithContext
+        )
+        
+        if (aiResponse.isFailure) {
+            val error = aiResponse.exceptionOrNull()
+            android.util.Log.e("ChatViewModel", "Error getting AI response", error)
+            _uiState.update { state ->
+                state.copy(
+                    isLoading = false,
+                    error = error?.message ?: "Unknown error occurred"
+                )
+            }
+            _events.emit(ChatEvent.ShowError(error?.message ?: "Unknown error occurred"))
+            return
+        }
+        
+        val aiMessage = aiResponse.getOrNull() ?: return
+        val originalResponse = aiMessage.content
+        
+        // Шаг 3: Фильтруем ответ через User Format MCP
+        val userFormatType = _uiState.value.userFormatType
+        android.util.Log.d("ChatViewModel", "🎨 Formatting response for user type: $userFormatType")
+        
+        val formatRequest = JsonRpcRequest(
+            id = requestId++,
+            method = "tools/call",
+            params = mapOf(
+                "name" to "format_response",
+                "arguments" to mapOf(
+                    "response" to originalResponse,
+                    "userFormatType" to userFormatType,
+                    "context" to currentInput
+                )
+            )
+        )
+        
+        val formatResponse = try {
+            userFormatMcpApi.sendRequest(formatRequest)
+        } catch (e: java.net.ConnectException) {
+            android.util.Log.w("ChatViewModel", "⚠️ Cannot connect to User Format MCP Server (port 8085). Using original response.", e)
+            null
+        } catch (e: java.net.SocketTimeoutException) {
+            android.util.Log.w("ChatViewModel", "⚠️ Timeout connecting to User Format MCP Server. Using original response.", e)
+            null
+        } catch (e: Exception) {
+            android.util.Log.w("ChatViewModel", "⚠️ Error connecting to User Format MCP Server. Using original response.", e)
+            null
+        }
+        
+        val formattedResponse = if (formatResponse != null && formatResponse.isSuccessful && formatResponse.body() != null && formatResponse.body()!!.error == null) {
+            val formatBody = formatResponse.body()!!
+            val formatResult = formatBody.result
+            val formatted = formatResult?.get("formattedResponse") as? String
+            if (formatted != null && formatted.isNotBlank()) {
+                android.util.Log.d("ChatViewModel", "✅ Response formatted successfully")
+                formatted
+            } else {
+                android.util.Log.w("ChatViewModel", "⚠️ Empty formatted response, using original")
+                originalResponse.take(500) // Ограничиваем до 10 предложений
+            }
+        } else {
+            android.util.Log.w("ChatViewModel", "⚠️ Format MCP failed, using original response")
+            originalResponse.take(500) // Ограничиваем до 10 предложений
+        }
+        
+        // Шаг 4: Сохраняем отфильтрованный ответ
+        val finalMessage = aiMessage.copy(content = formattedResponse)
+        chatRepository.saveMessage(finalMessage)
+        handleCheckMessageThreshold(finalMessage)
+        val updatedMessages = _uiState.value.messages + userMessage + finalMessage
+        val comparison = compareModelMetricsUseCase(updatedMessages, currentInput)
+        _uiState.update { state ->
+            state.copy(
+                isLoading = false,
+                metricsComparison = comparison
+            )
+        }
+    }
+    
     private suspend fun handleSendMessageWithProjectHelper(currentInput: String, userMessage: Message) {
         try {
             android.util.Log.d("ChatViewModel", "🔍 Processing message with Project Helper: $currentInput")
@@ -1290,7 +1677,25 @@ class ChatViewModel(
                 )
             )
             
-            val response = projectHelperMcpApi.sendRequest(request)
+            val response = try {
+                projectHelperMcpApi.sendRequest(request)
+            } catch (e: java.net.ConnectException) {
+                android.util.Log.e("ChatViewModel", "❌ Cannot connect to Project Helper MCP Server (port 8081). Make sure the server is running.", e)
+                _events.emit(ChatEvent.ShowError("Project Helper MCP Server is not available. Please start the server or use regular chat mode."))
+                // Fallback to regular Ollama if Project Helper is not available
+                handleSendMessageWithOllama(currentInput, userMessage)
+                return
+            } catch (e: java.net.SocketTimeoutException) {
+                android.util.Log.e("ChatViewModel", "❌ Timeout connecting to Project Helper MCP Server", e)
+                _events.emit(ChatEvent.ShowError("Connection timeout to Project Helper MCP Server. Please check the server."))
+                handleSendMessageWithOllama(currentInput, userMessage)
+                return
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "❌ Error connecting to Project Helper MCP Server", e)
+                _events.emit(ChatEvent.ShowError("Error connecting to Project Helper MCP Server: ${e.message}"))
+                handleSendMessageWithOllama(currentInput, userMessage)
+                return
+            }
             
             if (response.isSuccessful && response.body() != null) {
                 val body = response.body()!!
@@ -1454,6 +1859,47 @@ class ChatViewModel(
         android.util.Log.d("ChatViewModel", "Toggle Project Review Mode: $enabled")
         preferencesManager.projectReviewModeEnabled = enabled
         _uiState.update { it.copy(projectReviewModeEnabled = enabled) }
+    }
+    
+    private fun loadProjectUserAssistantState() {
+        val enabled = preferencesManager.projectUserAssistantEnabled
+        _uiState.update { 
+            it.copy(projectUserAssistantEnabled = enabled) 
+        }
+    }
+    
+    private fun handleToggleProjectUserAssistant(enabled: Boolean) {
+        android.util.Log.d("ChatViewModel", "Toggle Project User Assistant: $enabled")
+        preferencesManager.projectUserAssistantEnabled = enabled
+        _uiState.update { it.copy(projectUserAssistantEnabled = enabled) }
+    }
+    
+    private fun loadUserFormatTypeState() {
+        val formatType = preferencesManager.userFormatType
+        _uiState.update { 
+            it.copy(userFormatType = formatType) 
+        }
+    }
+    
+    private fun handleSetUserFormatType(formatType: String) {
+        android.util.Log.d("ChatViewModel", "Set User Format Type: $formatType")
+        preferencesManager.userFormatType = formatType
+        _uiState.update { it.copy(userFormatType = formatType) }
+    }
+    
+    private fun loadProjectFilesState() {
+        val enabled = preferencesManager.projectFilesEnabled
+        _uiState.update { 
+            it.copy(projectFilesEnabled = enabled) 
+        }
+    }
+    
+    private fun handleToggleProjectFiles(enabled: Boolean) {
+        android.util.Log.d("ChatViewModel", "Toggle Project Files: $enabled")
+        preferencesManager.projectFilesEnabled = enabled
+        _uiState.update { it.copy(projectFilesEnabled = enabled) }
+        
+        // Индексация будет выполнена при первом использовании, а не при включении
     }
     
     private suspend fun executeProjectReview(userMessage: Message) {

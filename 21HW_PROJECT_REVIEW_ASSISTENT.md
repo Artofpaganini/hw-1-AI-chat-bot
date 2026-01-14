@@ -836,7 +836,7 @@ echo $GITHUB_PERSONAL_ACCESS_TOKEN
 - `github-mcp-server/start-server.sh` - добавлена загрузка токена из local.properties (приоритет 1)
 - `github-mcp-server/src/main/kotlin/com/example/githubmcpserver/GitHubMcpHttpWrapper.kt` - обновлен для использования GITHUB_PERSONAL_ACCESS_TOKEN
 - `git-mcp-server/start-server.sh` - добавлена загрузка PROJECT_ROOT из local.properties
-- `GitFileDetector.kt` - обновлен для использования Git MCP Server вместо Remote Control MCP Server
+- `GitFileDetector.kt` - обновлен для использования Git MCP Server
 - `local.properties` - добавлено описание GITHUB_PERSONAL_ACCESS_TOKEN и PROJECT_ROOT
 - `.gitignore` - добавлен `github-mcp-server/.env`
 

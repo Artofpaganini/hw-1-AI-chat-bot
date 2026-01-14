@@ -259,6 +259,18 @@ fun HomeScreen(
             projectReviewModeEnabled = state.projectReviewModeEnabled,
             onProjectReviewModeToggle = { enabled ->
                 viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleProjectReviewMode(enabled))
+            },
+            projectUserAssistantEnabled = state.projectUserAssistantEnabled,
+            onProjectUserAssistantToggle = { enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleProjectUserAssistant(enabled))
+            },
+            userFormatType = state.userFormatType,
+            onUserFormatTypeChange = { formatType ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.SetUserFormatType(formatType))
+            },
+            projectFilesEnabled = state.projectFilesEnabled,
+            onProjectFilesToggle = { enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleProjectFiles(enabled))
             }
         )
     }

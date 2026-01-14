@@ -355,16 +355,6 @@ feature/chat/src/main/java/com/example/aiagentchat/feature/chat/
 
 ### Ошибка "API работает только для территории США"
 
-**Проблема:** При запуске `./start-servers.sh` появляется ошибка про США.
-
-**Причина:** Это ошибка Weather MCP Server, который не связан с Project Helper.
-
-**Решение:**
-1. Используйте `./start-project-helper.sh` вместо `./start-servers.sh`
-2. Или отредактируйте `start-servers.sh` и закомментируйте запуск Weather MCP Server
-
-Weather MCP Server не нужен для работы Project Helper функционала.
-
 ### Ошибка "Cannot connect to Ollama at http://10.0.2.2:8081/mcp"
 
 **Проблема:** При запуске с параметром `http://10.0.2.2:8081/mcp` появляется ошибка подключения к Ollama.

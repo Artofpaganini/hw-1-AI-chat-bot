@@ -80,11 +80,11 @@
 
 **Очищены компоненты:**
 - `ToolsDialog.kt` - удалены все элементы, кроме Ollama и Reranking
-- `HomeScreen.kt` - удалены все упоминания MCP, weather, test mode, remote control
-- `ChatViewModel.kt` - удалены все функции, связанные с MCP, weather, remote control
+- `HomeScreen.kt` - обновлен для работы с новым функционалом
+- `ChatViewModel.kt` - обновлен для работы с новым функционалом
 - `ChatUiState.kt` - удалены все состояния, связанные с ненужными фичами
 - `SendMessageUseCase.kt` - упрощен, удалена вся логика MCP tools
-- `PreferencesManager.kt` - удалены все настройки, связанные с MCP, weather, remote control
+- `PreferencesManager.kt` - обновлен для работы с новым функционалом
 
 **Обновлена конфигурация:**
 - `settings.gradle.kts` - удалены ненужные модули

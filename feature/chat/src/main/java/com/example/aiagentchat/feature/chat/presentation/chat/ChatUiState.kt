@@ -25,7 +25,10 @@ data class ChatUiState(
     val rerankingEnabled: Boolean = false,
     val projectHelperEnabled: Boolean = false,
     val githubMcpEnabled: Boolean = false,
-    val projectReviewModeEnabled: Boolean = false
+    val projectReviewModeEnabled: Boolean = false,
+    val projectUserAssistantEnabled: Boolean = false,
+    val userFormatType: String = "программист",
+    val projectFilesEnabled: Boolean = false
 )
 
 sealed interface ChatAction {
@@ -48,6 +51,9 @@ sealed interface ChatAction {
     data object DismissJsonExport : ChatAction
     data class ToggleGitHubMcp(val enabled: Boolean) : ChatAction
     data class ToggleProjectReviewMode(val enabled: Boolean) : ChatAction
+    data class ToggleProjectUserAssistant(val enabled: Boolean) : ChatAction
+    data class SetUserFormatType(val formatType: String) : ChatAction
+    data class ToggleProjectFiles(val enabled: Boolean) : ChatAction
 }
 
 sealed interface ChatEvent {
