@@ -264,7 +264,7 @@ fun formatResponseForUser(
                 appendLine("- Избегай технических терминов, объясняй простыми словами")
                 appendLine("- Используй примеры и аналогии")
                 appendLine("- Будь дружелюбным и понятным")
-                appendLine("- Ответ должен быть не более 10 предложений")
+                appendLine("- Ответ должен отражать всю суть вопроса, но быть понятным для ребенка")
             }
             userFormatType.contains("домохозяйка", ignoreCase = true) || 
             userFormatType.contains("housewife", ignoreCase = true) -> {
@@ -273,7 +273,7 @@ fun formatResponseForUser(
                 appendLine("- Избегай сложных технических терминов")
                 appendLine("- Объясняй через бытовые аналогии")
                 appendLine("- Будь вежливой и понятной")
-                appendLine("- Ответ должен быть не более 10 предложений")
+                appendLine("- Ответ должен отражать всю суть вопроса, но быть понятным для домохозяйки")
             }
             userFormatType.contains("программист", ignoreCase = true) || 
             userFormatType.contains("programmer", ignoreCase = true) -> {
@@ -281,14 +281,14 @@ fun formatResponseForUser(
                 appendLine("- Можешь использовать технические термины")
                 appendLine("- Будь точным и конкретным")
                 appendLine("- Можешь упоминать конкретные технологии и подходы")
-                appendLine("- Ответ должен быть не более 10 предложений")
+                appendLine("- Ответ должен отражать всю суть вопроса полностью")
             }
             else -> {
                 appendLine("Правила адаптации:")
                 appendLine("- Адаптируй ответ под указанный тип пользователя: $userFormatType")
                 appendLine("- Используй язык, понятный для этого типа пользователя")
                 appendLine("- Избегай излишней техничности, если пользователь не технический специалист")
-                appendLine("- Ответ должен быть не более 10 предложений")
+                appendLine("- Ответ должен отражать всю суть вопроса полностью")
             }
         }
         appendLine()
@@ -297,7 +297,7 @@ fun formatResponseForUser(
         appendLine("Оригинальный ответ AI:")
         appendLine(responseText)
         appendLine()
-        appendLine("Задача: Адаптируй этот ответ под указанный тип пользователя, сохраняя основную информацию, но изменив стиль и сложность изложения. Ответ должен быть сжатым (не более 10 предложений).")
+        appendLine("Задача: Адаптируй этот ответ под указанный тип пользователя, сохраняя всю основную информацию и отражая полную суть ответа. Измени только стиль и сложность изложения, но сохрани всю важную информацию из оригинального ответа.")
     }
     
     val requestBody = buildJsonObject {
@@ -309,7 +309,7 @@ fun formatResponseForUser(
             }
             addJsonObject {
                 put("role", "user")
-                put("content", "Адаптируй ответ под тип пользователя: $userFormatType. Ответ должен быть не более 10 предложений.")
+                put("content", "Адаптируй ответ под тип пользователя: $userFormatType. Сохрани всю важную информацию из оригинального ответа, отразив полную суть ответа на вопрос.")
             }
         }
         put("stream", false)
@@ -342,19 +342,17 @@ fun formatResponseForUser(
             }
             
             val content = jsonResponse["message"]?.jsonObject?.get("content")?.jsonPrimitive?.content 
-                ?: responseText.substring(0, minOf(500, responseText.length))
+                ?: responseText
             
-            // Ограничиваем ответ до 10 предложений
-            val sentences = content.split(Regex("[.!?]+")).filter { it.trim().isNotEmpty() }
-            val limitedSentences = sentences.take(10)
-            limitedSentences.joinToString(". ") + if (limitedSentences.size < sentences.size) "." else ""
+            // Возвращаем полный ответ без ограничений
+            content
         } else {
             logger.log(Level.WARNING, "Ollama API error: ${httpResponse.code}")
-            responseText.substring(0, minOf(500, responseText.length)) // Fallback
+            responseText // Fallback: возвращаем полный оригинальный ответ
         }
     } catch (e: Exception) {
         logger.log(Level.WARNING, "Error calling Ollama API: ${e.message}")
-        responseText.substring(0, minOf(500, responseText.length)) // Fallback: возвращаем первые 500 символов оригинального ответа
+        responseText // Fallback: возвращаем полный оригинальный ответ
     }
 }
 

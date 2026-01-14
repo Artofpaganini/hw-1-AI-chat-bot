@@ -1556,16 +1556,123 @@ class ChatViewModel(
         }
         
         android.util.Log.d("ChatViewModel", "✅ Found relevant context from project files (reranking=$rerankingEnabled)")
+        android.util.Log.d("ChatViewModel", "📄 Content preview (first 500 chars): ${content.take(500)}")
+        
+        // Извлекаем источники из content перед очисткой
+        // Форматы могут быть:
+        // 1. "[Источник: filename, Релевантность: 0.85]" - без reranking
+        // 2. "Источники:\n- filename (Релевантность: 0.85)" - с reranking
+        // 3. "Источник: filename, Релевантность: 0.85" - альтернативный формат
+        val sources = mutableSetOf<String>()
+        val sourceRelevanceMap = mutableMapOf<String, String>()
+        
+        // Формат 1: "[Источник: filename, Релевантность: 0.85]" или "1. [Источник: filename, Релевантность: 0.85]"
+        val bracketFormat = Regex("\\[.*?Источник:\\s*([^,]+).*?Релевантность:\\s*([0-9.]+).*?\\]")
+        bracketFormat.findAll(content).forEach { match ->
+            val source = match.groupValues[1].trim().replace("\"", "")
+            val relevance = match.groupValues[2]
+            if (source.isNotBlank() && !source.contains("Источник")) {
+                sources.add(source)
+                sourceRelevanceMap[source] = relevance
+                android.util.Log.d("ChatViewModel", "📚 Found source (bracket format): $source (relevance: $relevance)")
+            }
+        }
+        
+        // Формат 2: "Источники:\n- filename (Релевантность: 0.85)"
+        // Также ищем формат с пробелами: "- filename (Релевантность: 0.85)"
+        val sourcesListFormat = Regex("-\\s*([^\\s(]+(?:\\.[^\\s(]+)?)\\s*\\(Релевантность:\\s*([0-9.]+)\\)")
+        sourcesListFormat.findAll(content).forEach { match ->
+            val source = match.groupValues[1].trim()
+            val relevance = match.groupValues[2]
+            if (source.isNotBlank() && !source.contains("Источник")) {
+                sources.add(source)
+                sourceRelevanceMap[source] = relevance
+                android.util.Log.d("ChatViewModel", "📚 Found source (list format): $source (relevance: $relevance)")
+            }
+        }
+        
+        // Также ищем формат с точкой в начале: "1. [Источник: filename, Релевантность: 0.85]"
+        val numberedBracketFormat = Regex("\\d+\\.\\s*\\[.*?Источник:\\s*([^,]+).*?Релевантность:\\s*([0-9.]+).*?\\]")
+        numberedBracketFormat.findAll(content).forEach { match ->
+            val source = match.groupValues[1].trim().replace("\"", "")
+            val relevance = match.groupValues[2]
+            if (source.isNotBlank() && !source.contains("Источник")) {
+                sources.add(source)
+                sourceRelevanceMap[source] = relevance
+                android.util.Log.d("ChatViewModel", "📚 Found source (numbered bracket format): $source (relevance: $relevance)")
+            }
+        }
+        
+        // Формат 3: "Источник: filename, Релевантность: 0.85" или "Источник: \"filename\""
+        val sourceFormat = Regex("Источник:\\s*\"?([^\",\\n]+)\"?")
+        val relevanceFormat = Regex("Релевантность:\\s*([0-9.]+)")
+        
+        val lines = content.split("\n")
+        var currentSource: String? = null
+        lines.forEach { line ->
+            val sourceMatch = sourceFormat.find(line)
+            if (sourceMatch != null) {
+                currentSource = sourceMatch.groupValues[1].trim()
+                if (currentSource.isNotBlank() && !currentSource.contains("Источник")) {
+                    sources.add(currentSource)
+                    android.util.Log.d("ChatViewModel", "📚 Found source (line format): $currentSource")
+                }
+            }
+            
+            val relevanceMatch = relevanceFormat.find(line)
+            if (relevanceMatch != null && currentSource != null) {
+                sourceRelevanceMap[currentSource!!] = relevanceMatch.groupValues[1]
+                android.util.Log.d("ChatViewModel", "📚 Added relevance for $currentSource: ${relevanceMatch.groupValues[1]}")
+            }
+        }
+        
+        // Ограничиваем до 10 источников (топ по релевантности)
+        val sortedSources = sources.sortedByDescending { 
+            sourceRelevanceMap[it]?.toFloatOrNull() ?: 0f 
+        }.take(10)
+        
+        android.util.Log.d("ChatViewModel", "📚 Extracted ${sortedSources.size} sources from content")
+        if (sortedSources.isNotEmpty()) {
+            android.util.Log.d("ChatViewModel", "📚 Sources: ${sortedSources.take(5).joinToString(", ")}${if (sortedSources.size > 5) "..." else ""}")
+        } else {
+            android.util.Log.w("ChatViewModel", "⚠️ No sources extracted. Content sample: ${content.take(500)}")
+        }
         
         // Убираем информацию об источнике и релевантности из контекста для промпта
-        val cleanContent = content
-            .replace(Regex("Источник:\\s*.+"), "")
-            .replace(Regex("Релевантность:\\s*[0-9.]+"), "")
-            .trim()
+        // Но сохраняем раздел "Источники:" в конце, если он есть (для reranking)
+        val cleanContent = if (content.contains("Источники:")) {
+            // Если есть раздел "Источники:", удаляем только его заголовок и список
+            val sourcesSectionStart = content.indexOf("Источники:")
+            if (sourcesSectionStart > 0) {
+                content.substring(0, sourcesSectionStart)
+                    .replace(Regex("Источник:\\s*.+"), "")
+                    .replace(Regex("Релевантность:\\s*[0-9.]+"), "")
+                    .replace(Regex("\\[.*?Источник:.*?\\]"), "")
+                    .trim()
+            } else {
+                content
+                    .replace(Regex("Источник:\\s*.+"), "")
+                    .replace(Regex("Релевантность:\\s*[0-9.]+"), "")
+                    .replace(Regex("\\[.*?Источник:.*?\\]"), "")
+                    .replace(Regex("Источники:.*"), "")
+                    .trim()
+            }
+        } else {
+            content
+                .replace(Regex("Источник:\\s*.+"), "")
+                .replace(Regex("Релевантность:\\s*[0-9.]+"), "")
+                .replace(Regex("\\[.*?Источник:.*?\\]"), "")
+                .trim()
+        }
+        
+        android.util.Log.d("ChatViewModel", "📝 Clean content length: ${cleanContent.length}, Original content length: ${content.length}")
         
         // Шаг 2: Получаем ответ от AI
         val enhancedPrompt = buildString {
-            appendLine("Based on the following context from project documentation, please answer the user's question.")
+            appendLine("Based on the following context from project documentation, please answer the user's question completely and thoroughly.")
+            appendLine()
+            appendLine("IMPORTANT: Your answer must be based ONLY on the information provided in the context below. Do not use any external knowledge.")
+            appendLine("The answer should reflect the full essence of the question and include all relevant details from the project files.")
             appendLine()
             appendLine("=== RELEVANT CONTEXT FROM PROJECT ===")
             appendLine(cleanContent)
@@ -1574,6 +1681,8 @@ class ChatViewModel(
             appendLine("=== USER QUESTION ===")
             appendLine(currentInput)
             appendLine("=== END OF QUESTION ===")
+            appendLine()
+            appendLine("Provide a complete answer that fully addresses the question using only the information from the project files above.")
         }
         
         val messagesWithContext = listOf(
@@ -1640,15 +1749,34 @@ class ChatViewModel(
                 formatted
             } else {
                 android.util.Log.w("ChatViewModel", "⚠️ Empty formatted response, using original")
-                originalResponse.take(500) // Ограничиваем до 10 предложений
+                originalResponse // Возвращаем полный ответ
             }
         } else {
             android.util.Log.w("ChatViewModel", "⚠️ Format MCP failed, using original response")
-            originalResponse.take(500) // Ограничиваем до 10 предложений
+            originalResponse // Возвращаем полный ответ
         }
         
-        // Шаг 4: Сохраняем отфильтрованный ответ
-        val finalMessage = aiMessage.copy(content = formattedResponse)
+        // Шаг 4: Добавляем источники к ответу (до 10 штук)
+        val finalResponseWithSources = if (sortedSources.isNotEmpty()) {
+            buildString {
+                appendLine(formattedResponse.trim())
+                appendLine()
+                appendLine("---")
+                appendLine("Источники:")
+                sortedSources.forEach { source ->
+                    val relevance = sourceRelevanceMap[source] ?: "N/A"
+                    appendLine("- $source (Релевантность: $relevance)")
+                }
+            }
+        } else {
+            android.util.Log.w("ChatViewModel", "⚠️ No sources found in content. Content preview: ${content.take(200)}")
+            formattedResponse
+        }
+        
+        android.util.Log.d("ChatViewModel", "✅ Final response with ${sortedSources.size} sources prepared")
+        
+        // Шаг 5: Сохраняем отфильтрованный ответ с источниками
+        val finalMessage = aiMessage.copy(content = finalResponseWithSources)
         chatRepository.saveMessage(finalMessage)
         handleCheckMessageThreshold(finalMessage)
         val updatedMessages = _uiState.value.messages + userMessage + finalMessage
