@@ -97,9 +97,10 @@ class ChatViewModel(
         observeContextSummaries()
         loadOllamaState()
         loadRerankingState()
-        loadProjectHelperState()
         loadGitHubMcpState()
         loadProjectReviewModeState()
+        loadProjectTeamAssistantState()
+        loadLocalMcpServerState()
     }
 
     fun onAction(action: ChatAction) {
@@ -115,14 +116,13 @@ class ChatViewModel(
             is ChatAction.ShowMcpTools -> handleShowMcpTools()
             is ChatAction.DismissMcpTools -> handleDismissMcpTools()
             is ChatAction.ToggleOllama -> handleToggleOllama(action.enabled)
-            is ChatAction.SelectOllamaFile -> handleSelectOllamaFile(action.filePath)
-            is ChatAction.RemoveOllamaFile -> handleRemoveOllamaFile(action.filePath)
             is ChatAction.ToggleReranking -> handleToggleReranking(action.enabled)
-            is ChatAction.ToggleProjectHelper -> handleToggleProjectHelper(action.enabled)
             is ChatAction.ExportJson -> handleExportJson()
             is ChatAction.DismissJsonExport -> handleDismissJsonExport()
             is ChatAction.ToggleGitHubMcp -> handleToggleGitHubMcp(action.enabled)
             is ChatAction.ToggleProjectReviewMode -> handleToggleProjectReviewMode(action.enabled)
+            is ChatAction.ToggleProjectTeamAssistant -> handleToggleProjectTeamAssistant(action.enabled)
+            is ChatAction.ToggleLocalMcpServer -> handleToggleLocalMcpServer(action.enabled)
         }
     }
     
@@ -210,7 +210,8 @@ class ChatViewModel(
             }
 
             val ollamaEnabled = _uiState.value.ollamaEnabled
-            val projectHelperEnabled = _uiState.value.projectHelperEnabled
+            val projectReviewModeEnabled = _uiState.value.projectReviewModeEnabled
+            val projectTeamAssistantEnabled = _uiState.value.projectTeamAssistantEnabled
             
             // Проверяем команду /help
             if (currentInput.startsWith("/help", ignoreCase = true)) {
@@ -234,9 +235,15 @@ class ChatViewModel(
                 return@launch
             }
             
-            // Если включен Project Helper + Ollama Vector Search, используем RAG с файлами проекта
-            if (projectHelperEnabled && ollamaEnabled) {
-                handleSendMessageWithProjectHelper(currentInput, userMessage)
+            // Проверяем команду /tasks
+            if (currentInput.startsWith("/tasks", ignoreCase = true)) {
+                executeTasksCommand(userMessage)
+                return@launch
+            }
+            
+            // Если включен Project Review Mode + Ollama Vector Search, используем RAG с файлами проекта
+            if (projectReviewModeEnabled && ollamaEnabled) {
+                handleSendMessageWithProjectReviewMode(currentInput, userMessage)
             } else if (ollamaEnabled) {
                 handleSendMessageWithOllama(currentInput, userMessage)
             } else {
@@ -266,26 +273,9 @@ class ChatViewModel(
             android.util.Log.d("ChatViewModel", "Total indexed books: ${allBooks.size}")
             android.util.Log.d("ChatViewModel", "Available books: ${allBooks.map { it.title }}")
             
-            // Определяем, в каких книгах искать
-            // Если выбраны конкретные книги - ищем только в них, иначе во всех
-            val selectedFilePaths = _uiState.value.ollamaSelectedFiles
-            val bookIdsToSearch = if (selectedFilePaths.isNotEmpty()) {
-                val selectedBookIds = selectedFilePaths.mapNotNull { filePath ->
-                    val fileName = java.io.File(filePath).name
-                    val selectedBook = allBooks.find { it.title == fileName || it.filePath == filePath }
-                    selectedBook?.bookId
-                }
-                if (selectedBookIds.isNotEmpty()) {
-                    android.util.Log.d("ChatViewModel", "Searching in ${selectedBookIds.size} selected book(s): ${selectedBookIds.map { bookId -> allBooks.find { it.bookId == bookId }?.title }}")
-                    selectedBookIds
-                } else {
-                    android.util.Log.w("ChatViewModel", "Selected files not found in indexed books, searching in all books")
-                    allBooks.map { it.bookId }
-                }
-            } else {
-                android.util.Log.d("ChatViewModel", "No books selected, searching in all ${allBooks.size} books")
-                allBooks.map { it.bookId }
-            }
+            // Ищем во всех проиндексированных книгах
+            val bookIdsToSearch = allBooks.map { it.bookId }
+            android.util.Log.d("ChatViewModel", "Searching in all ${allBooks.size} indexed books")
             
             val queryEmbedding = generateQueryEmbedding(currentInput)
             
@@ -506,7 +496,19 @@ class ChatViewModel(
     private fun handleClearChat() {
         viewModelScope.launch {
             chatRepository.deleteAllMessages()
-            _uiState.update { it.copy(messages = emptyList(), metricsComparison = null) }
+            preferencesManager.resetAllToggles()
+            _uiState.update { 
+                it.copy(
+                    messages = emptyList(), 
+                    metricsComparison = null,
+                    ollamaEnabled = false,
+                    rerankingEnabled = false,
+                    githubMcpEnabled = false,
+                    projectReviewModeEnabled = false,
+                    projectTeamAssistantEnabled = false,
+                    localMcpServerEnabled = false
+                ) 
+            }
         }
     }
 
@@ -580,15 +582,10 @@ class ChatViewModel(
     
     private fun loadOllamaState() {
         val enabled = preferencesManager.ollamaEnabled
-        val selectedFiles = preferencesManager.ollamaSelectedFiles
         _uiState.update { 
-            it.copy(
-                ollamaEnabled = enabled,
-                ollamaSelectedFiles = selectedFiles
-            ) 
+            it.copy(ollamaEnabled = enabled) 
         }
         if (enabled) {
-            // Проверяем доступность Ollama сервера
             checkOllamaConnection()
         }
     }
@@ -598,64 +595,10 @@ class ChatViewModel(
         preferencesManager.ollamaEnabled = enabled
         _uiState.update { it.copy(ollamaEnabled = enabled) }
         if (enabled) {
-            // При включении Ollama проверяем подключение
             android.util.Log.i("ChatViewModel", "🚀 Ollama enabled - checking server connection...")
             android.util.Log.i("ChatViewModel", "📝 Note: Run './setup-ollama.sh' on your Mac to start Ollama server")
             checkOllamaConnection()
-            // Файл должен быть выбран пользователем через file picker
-            // Индексация начнется после выбора файла
-        } else {
-            // При выключении очищаем выбранные файлы
-            preferencesManager.ollamaSelectedFiles = emptyList()
-            _uiState.update { it.copy(ollamaSelectedFiles = emptyList()) }
         }
-    }
-    
-    private fun handleSelectOllamaFile(filePath: String?) {
-        android.util.Log.d("ChatViewModel", "Select Ollama file: $filePath")
-        if (filePath == null) {
-            preferencesManager.ollamaSelectedFiles = emptyList()
-            _uiState.update { it.copy(ollamaSelectedFiles = emptyList()) }
-            return
-        }
-        
-        val currentFiles = preferencesManager.ollamaSelectedFiles.toMutableList()
-        
-        // Проверяем лимит (максимум 5 книг)
-        if (currentFiles.size >= 5) {
-            android.util.Log.w("ChatViewModel", "Cannot add more than 5 books")
-            viewModelScope.launch {
-                _events.emit(ChatEvent.ShowError("Cannot add more than 5 books. Please remove a book first."))
-            }
-            return
-        }
-        
-        // Проверяем, не добавлен ли уже этот файл
-        if (currentFiles.contains(filePath)) {
-            android.util.Log.w("ChatViewModel", "File already selected: $filePath")
-            viewModelScope.launch {
-                _events.emit(ChatEvent.ShowError("This file is already selected."))
-            }
-            return
-        }
-        
-        // Добавляем файл в список
-        currentFiles.add(filePath)
-        preferencesManager.ollamaSelectedFiles = currentFiles
-        _uiState.update { it.copy(ollamaSelectedFiles = currentFiles) }
-        
-        if (_uiState.value.ollamaEnabled) {
-            // Если Ollama включен и файл выбран, начинаем индексацию
-            startIndexingForFile(filePath)
-        }
-    }
-    
-    private fun handleRemoveOllamaFile(filePath: String) {
-        android.util.Log.d("ChatViewModel", "Remove Ollama file: $filePath")
-        val currentFiles = preferencesManager.ollamaSelectedFiles.toMutableList()
-        currentFiles.remove(filePath)
-        preferencesManager.ollamaSelectedFiles = currentFiles
-        _uiState.update { it.copy(ollamaSelectedFiles = currentFiles) }
     }
     
     private fun loadRerankingState() {
@@ -671,24 +614,36 @@ class ChatViewModel(
         _uiState.update { it.copy(rerankingEnabled = enabled) }
     }
     
-    private fun loadProjectHelperState() {
-        val enabled = preferencesManager.projectHelperEnabled
+    private fun loadProjectTeamAssistantState() {
+        val enabled = preferencesManager.projectTeamAssistantEnabled
         _uiState.update { 
-            it.copy(projectHelperEnabled = enabled) 
+            it.copy(projectTeamAssistantEnabled = enabled) 
         }
     }
     
-    private fun handleToggleProjectHelper(enabled: Boolean) {
-        android.util.Log.d("ChatViewModel", "Toggle Project Helper: $enabled")
-        preferencesManager.projectHelperEnabled = enabled
-        _uiState.update { it.copy(projectHelperEnabled = enabled) }
+    private fun handleToggleProjectTeamAssistant(enabled: Boolean) {
+        android.util.Log.d("ChatViewModel", "Toggle Project Team Assistant: $enabled")
+        preferencesManager.projectTeamAssistantEnabled = enabled
+        _uiState.update { it.copy(projectTeamAssistantEnabled = enabled) }
         
         if (enabled) {
-            // При включении Project Helper запускаем индексацию .md файлов проекта
             viewModelScope.launch {
-                indexProjectFiles()
+                indexProjectFilesForTeamAssistant()
             }
         }
+    }
+    
+    private fun loadLocalMcpServerState() {
+        val enabled = preferencesManager.localMcpServerEnabled
+        _uiState.update { 
+            it.copy(localMcpServerEnabled = enabled) 
+        }
+    }
+    
+    private fun handleToggleLocalMcpServer(enabled: Boolean) {
+        android.util.Log.d("ChatViewModel", "Toggle Local MCP Server: $enabled")
+        preferencesManager.localMcpServerEnabled = enabled
+        _uiState.update { it.copy(localMcpServerEnabled = enabled) }
     }
     
     private fun checkOllamaConnection() {
@@ -742,67 +697,6 @@ class ChatViewModel(
                 android.util.Log.e("ChatViewModel", "❌ Error checking Ollama connection", e)
                 android.util.Log.e("ChatViewModel", "Error type: ${e.javaClass.simpleName}, message: ${e.message}")
                 _events.emit(ChatEvent.ShowError("Error checking Ollama connection: ${e.message}"))
-            }
-        }
-    }
-    
-    private fun startIndexingForFile(filePath: String) {
-        viewModelScope.launch {
-            try {
-                val file = File(filePath)
-                if (!file.exists()) {
-                    android.util.Log.e("ChatViewModel", "❌ File not found: $filePath")
-                    _events.emit(ChatEvent.ShowError("File not found: ${file.name}"))
-                    return@launch
-                }
-                
-                if (!file.canRead()) {
-                    android.util.Log.e("ChatViewModel", "❌ Cannot read file: $filePath")
-                    _events.emit(ChatEvent.ShowError("Cannot read file: ${file.name}"))
-                    return@launch
-                }
-                
-                val fileName = file.name
-                android.util.Log.i("ChatViewModel", "🚀 Starting indexing of file: $fileName")
-                
-                val needsIndexing = textIndexingService.checkIfIndexingNeeded(filePath, fileName)
-                
-                if (needsIndexing) {
-                    // Запускаем наблюдение за прогрессом в отдельной корутине
-                    val progressJob = viewModelScope.launch {
-                        textIndexingService.indexingProgress.collect { progress ->
-                            progress?.let {
-                                val percent = it.percentage.toInt()
-                                android.util.Log.i("ChatViewModel", 
-                                    "📊 Indexing progress: $percent% - ${it.status} (chunk ${it.currentChunk}/${it.totalChunks})")
-                            }
-                        }
-                    }
-                    
-                    textIndexingService.indexFile(filePath, fileName)
-                        .onSuccess {
-                            progressJob.cancel()
-                            android.util.Log.i("ChatViewModel", "✅ Indexing completed successfully")
-                            _events.emit(ChatEvent.ShowError("✅ Vector indexing completed successfully! You can now ask questions about the document."))
-                        }.onFailure { error ->
-                            progressJob.cancel()
-                            android.util.Log.e("ChatViewModel", "❌ Indexing failed", error)
-                            _events.emit(ChatEvent.ShowError("Indexing failed: ${error.message}"))
-                        }
-                } else {
-                    val fileContent = file.readText(Charsets.UTF_8)
-                    val fileHash = vectorDatabaseService.calculateFileHash(fileContent)
-                    val existingBook = vectorDatabaseService.getBookByHash(fileHash)
-                    if (existingBook != null) {
-                        android.util.Log.i("ChatViewModel", "✅ File already indexed (${existingBook.chunkCount} chunks), ready to use")
-                    _events.emit(ChatEvent.ShowError("ℹ️ File already indexed. Ready to use."))
-                    } else {
-                        android.util.Log.w("ChatViewModel", "File hash check failed, but indexing not needed")
-                    }
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("ChatViewModel", "Error indexing file", e)
-                _events.emit(ChatEvent.ShowError("Error: ${e.message}"))
             }
         }
     }
@@ -1274,9 +1168,9 @@ class ChatViewModel(
         }
     }
     
-    private suspend fun handleSendMessageWithProjectHelper(currentInput: String, userMessage: Message) {
+    private suspend fun handleSendMessageWithProjectReviewMode(currentInput: String, userMessage: Message) {
         try {
-            android.util.Log.d("ChatViewModel", "🔍 Processing message with Project Helper: $currentInput")
+            android.util.Log.d("ChatViewModel", "🔍 Processing message with Project Review Mode: $currentInput")
             
             val request = JsonRpcRequest(
                 id = requestId++,
@@ -1296,7 +1190,7 @@ class ChatViewModel(
                 val body = response.body()!!
                 if (body.error != null) {
                     android.util.Log.e("ChatViewModel", "❌ MCP Error: ${body.error.message}")
-                    // Fallback to regular Ollama if Project Helper fails
+                    // Fallback to regular Ollama if Project Review Mode fails
                     handleSendMessageWithOllama(currentInput, userMessage)
                     return
                 }
@@ -1577,6 +1471,193 @@ class ChatViewModel(
                 )
             }
             _events.emit(ChatEvent.ShowError("Error executing project review: ${e.message}"))
+        }
+    }
+    
+    private suspend fun indexProjectFilesForTeamAssistant() {
+        try {
+            android.util.Log.d("ChatViewModel", "🚀 Starting project files indexing for Team Assistant...")
+            
+            val request = JsonRpcRequest(
+                id = requestId++,
+                method = "tools/call",
+                params = mapOf(
+                    "name" to "index_project_files",
+                    "arguments" to emptyMap<String, Any>()
+                )
+            )
+            
+            val response = projectHelperMcpApi.sendRequest(request)
+            
+            if (response.isSuccessful && response.body() != null) {
+                val body = response.body()!!
+                if (body.error != null) {
+                    android.util.Log.e("ChatViewModel", "❌ MCP Error: ${body.error.message}")
+                    _events.emit(ChatEvent.ShowError("Indexing failed: ${body.error.message}"))
+                } else {
+                    val result = body.result
+                    val message = result?.get("content") as? String ?: "Project files indexed successfully"
+                    android.util.Log.i("ChatViewModel", "✅ Project files indexed for Team Assistant: $message")
+                }
+            } else {
+                val errorBody = response.errorBody()?.string() ?: "Unknown error"
+                android.util.Log.e("ChatViewModel", "❌ HTTP Error: ${response.code()} - $errorBody")
+                _events.emit(ChatEvent.ShowError("Indexing failed: HTTP ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "❌ Error indexing project files for Team Assistant", e)
+            _events.emit(ChatEvent.ShowError("Error indexing project files: ${e.message}"))
+        }
+    }
+    
+    private suspend fun executeTasksCommand(userMessage: Message) {
+        try {
+            android.util.Log.d("ChatViewModel", "🔍 Executing /tasks command...")
+            
+            val ollamaEnabled = _uiState.value.ollamaEnabled
+            val projectTeamAssistantEnabled = _uiState.value.projectTeamAssistantEnabled
+            val rerankingEnabled = _uiState.value.rerankingEnabled
+            val githubMcpEnabled = _uiState.value.githubMcpEnabled
+            val projectReviewModeEnabled = _uiState.value.projectReviewModeEnabled
+            
+            if (!ollamaEnabled || !projectTeamAssistantEnabled) {
+                val errorMsg = "Project Team Assistant requires Ollama Vector Search to be enabled. Please enable both in Tools settings."
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = errorMsg
+                    )
+                }
+                _events.emit(ChatEvent.ShowError(errorMsg))
+                return
+            }
+            
+            val query = "Find problematic code areas related to: memory leaks, crashes, non-security values, clean architecture violations, non-thread-safe logic"
+            
+            val request = JsonRpcRequest(
+                id = requestId++,
+                method = "tools/call",
+                params = mapOf(
+                    "name" to "search_project_files",
+                    "arguments" to mapOf(
+                        "query" to query,
+                        "reranking_enabled" to rerankingEnabled
+                    )
+                )
+            )
+            
+            val response = projectHelperMcpApi.sendRequest(request)
+            
+            if (response.isSuccessful && response.body() != null) {
+                val body = response.body()!!
+                if (body.error != null) {
+                    android.util.Log.e("ChatViewModel", "❌ MCP Error: ${body.error.message}")
+                    _uiState.update { state ->
+                        state.copy(
+                            isLoading = false,
+                            error = "Tasks generation failed: ${body.error.message}"
+                        )
+                    }
+                    _events.emit(ChatEvent.ShowError("Tasks generation failed: ${body.error.message}"))
+                    return
+                }
+                
+                val result = body.result
+                val contentArray = result?.get("content") as? List<*>
+                val content = if (contentArray != null && contentArray.isNotEmpty()) {
+                    val firstContent = contentArray.firstOrNull() as? Map<*, *>
+                    firstContent?.get("text") as? String ?: firstContent?.get("content") as? String
+                } else {
+                    result?.get("content") as? String
+                }
+                
+                if (content != null && content.isNotBlank()) {
+                    val tasksPrompt = buildString {
+                        appendLine("Based on the following problematic code areas from the project, generate exactly 3 technical tasks in the following format:")
+                        appendLine()
+                        appendLine("For each task, provide:")
+                        appendLine("1. Название: (max 300 tokens) - Brief task title")
+                        appendLine("2. Источник проблемы: (max 300 tokens) - Source of the problem (file path, line numbers)")
+                        appendLine("3. Описание: (max 1000 tokens) - Detailed description of the problem")
+                        appendLine("4. Ожидаемый результат: (max 500 tokens) - Expected outcome and rules to follow")
+                        appendLine()
+                        appendLine("Prioritize tasks as: 1 critical, 1 important, 1 normal")
+                        appendLine()
+                        appendLine("Rules to check:")
+                        appendLine("- memory leaks")
+                        appendLine("- crashes")
+                        appendLine("- non security values")
+                        appendLine("- clean architecture")
+                        appendLine("- non thread safe logic")
+                        appendLine()
+                        appendLine("=== PROBLEMATIC CODE AREAS ===")
+                        appendLine(content)
+                        appendLine("=== END OF CODE AREAS ===")
+                        appendLine()
+                        appendLine("Generate exactly 3 tasks in the format above, one critical, one important, one normal.")
+                    }
+                    
+                    val messagesWithContext = listOf(
+                        ChatMessageDto(role = "user", content = tasksPrompt)
+                    )
+                    
+                    sendMessageUseCase(
+                        messages = messagesWithContext,
+                        model = _uiState.value.selectedModel
+                    )
+                        .onSuccess { response ->
+                            val aiMessage = Message(
+                                content = response.content,
+                                isUser = false
+                            )
+                            chatRepository.saveMessage(aiMessage)
+                            _uiState.update { state ->
+                                state.copy(
+                                    isLoading = false,
+                                    error = null
+                                )
+                            }
+                        }
+                        .onFailure { error ->
+                            android.util.Log.e("ChatViewModel", "Error generating tasks", error)
+                            _uiState.update { state ->
+                                state.copy(
+                                    isLoading = false,
+                                    error = error.message ?: "Unknown error occurred"
+                                )
+                            }
+                            _events.emit(ChatEvent.ShowError(error.message ?: "Unknown error occurred"))
+                        }
+                } else {
+                    val errorMsg = "No problematic code areas found. The project appears to be clean."
+                    _uiState.update { state ->
+                        state.copy(
+                            isLoading = false,
+                            error = errorMsg
+                        )
+                    }
+                    _events.emit(ChatEvent.ShowError(errorMsg))
+                }
+            } else {
+                val errorBody = response.errorBody()?.string() ?: "Unknown error"
+                android.util.Log.e("ChatViewModel", "❌ HTTP Error: ${response.code()} - $errorBody")
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = "Tasks generation failed: HTTP ${response.code()}"
+                    )
+                }
+                _events.emit(ChatEvent.ShowError("Tasks generation failed: HTTP ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "❌ Error executing /tasks command", e)
+            _uiState.update { state ->
+                state.copy(
+                    isLoading = false,
+                    error = e.message ?: "Unknown error occurred"
+                )
+            }
+            _events.emit(ChatEvent.ShowError("Error executing /tasks command: ${e.message}"))
         }
     }
     

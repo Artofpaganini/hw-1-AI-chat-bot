@@ -3,9 +3,6 @@ package com.example.aiagentchat.feature.home.presentation
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.net.Uri
-import android.provider.OpenableColumns
-import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -51,16 +48,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import android.Manifest
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import android.os.Build
-import androidx.core.content.ContextCompat
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -92,51 +84,6 @@ fun HomeScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    
-    // Launcher для запроса разрешения на чтение файлов
-    val storagePermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val allGranted = permissions.values.all { it }
-        if (allGranted) {
-            scope.launch {
-                snackbarHostState.showSnackbar("Storage permission granted")
-            }
-            // Автоматически переключаем switcher Ollama, если он был включен в первый раз
-            if (!state.ollamaEnabled) {
-                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleOllama(true))
-            }
-        } else {
-            scope.launch {
-                snackbarHostState.showSnackbar("Storage permission denied. Please enable it in settings to use Ollama indexing.")
-            }
-        }
-    }
-    
-    // Launcher для выбора файла
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        uri?.let {
-            try {
-                val filePath = getFilePathFromUri(context, it)
-                if (filePath != null) {
-                    viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.SelectOllamaFile(filePath))
-                    scope.launch {
-                        snackbarHostState.showSnackbar("File selected: ${java.io.File(filePath).name}")
-                    }
-                } else {
-                    scope.launch {
-                        snackbarHostState.showSnackbar("Could not access file. Please try again.")
-                    }
-                }
-            } catch (e: Exception) {
-                scope.launch {
-                    snackbarHostState.showSnackbar("Error selecting file: ${e.message}")
-                }
-            }
-        }
-    }
     
     LaunchedEffect(state.messages.size) {
         if (state.messages.isNotEmpty()) {
@@ -187,66 +134,8 @@ fun HomeScreen(
                 viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.DismissMcpTools)
             },
             ollamaEnabled = state.ollamaEnabled,
-            ollamaSelectedFiles = state.ollamaSelectedFiles,
-            projectHelperEnabled = state.projectHelperEnabled,
-            onProjectHelperToggle = { enabled ->
-                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleProjectHelper(enabled))
-            },
-            onOllamaSelectFile = {
-                // Проверяем разрешения перед открытием file picker
-                val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    arrayOf(
-                        Manifest.permission.READ_MEDIA_IMAGES,
-                        Manifest.permission.READ_MEDIA_VIDEO,
-                        Manifest.permission.READ_MEDIA_AUDIO
-                    )
-                } else {
-                    arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-                }
-                
-                val hasAllPermissions = permissions.all { permission ->
-                    ContextCompat.checkSelfPermission(context, permission) == 
-                    android.content.pm.PackageManager.PERMISSION_GRANTED
-                }
-                
-                if (hasAllPermissions) {
-                    filePickerLauncher.launch("*/*")
-                } else {
-                    storagePermissionLauncher.launch(permissions)
-                }
-            },
-            onOllamaRemoveFile = { filePath ->
-                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.RemoveOllamaFile(filePath))
-            },
             onOllamaToggle = { enabled ->
-                if (enabled) {
-                    // Проверяем разрешения на чтение файлов
-                    val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        arrayOf(
-                            Manifest.permission.READ_MEDIA_IMAGES,
-                            Manifest.permission.READ_MEDIA_VIDEO,
-                            Manifest.permission.READ_MEDIA_AUDIO
-                        )
-                    } else {
-                        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-                    }
-                    
-                    val hasAllPermissions = permissions.all { permission ->
-                        ContextCompat.checkSelfPermission(context, permission) == 
-                        android.content.pm.PackageManager.PERMISSION_GRANTED
-                    }
-                    
-                    if (!hasAllPermissions) {
-                        storagePermissionLauncher.launch(permissions)
-                        return@ToolsDialog
-                    } else {
-                        // Разрешения уже есть - переключаем switcher
-                        viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleOllama(enabled))
-                    }
-                } else {
-                    // Выключаем Ollama
-                    viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleOllama(enabled))
-                }
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleOllama(enabled))
             },
             rerankingEnabled = state.rerankingEnabled,
             onRerankingToggle = { enabled ->
@@ -259,6 +148,14 @@ fun HomeScreen(
             projectReviewModeEnabled = state.projectReviewModeEnabled,
             onProjectReviewModeToggle = { enabled ->
                 viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleProjectReviewMode(enabled))
+            },
+            projectTeamAssistantEnabled = state.projectTeamAssistantEnabled,
+            onProjectTeamAssistantToggle = { enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleProjectTeamAssistant(enabled))
+            },
+            localMcpServerEnabled = state.localMcpServerEnabled,
+            onLocalMcpServerToggle = { enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleLocalMcpServer(enabled))
             }
         )
     }
@@ -918,34 +815,3 @@ private fun JsonExportDialog(
 }
 
 // Функция для получения пути к файлу из URI
-private fun getFilePathFromUri(context: Context, uri: Uri): String? {
-    var result: String? = null
-    if (uri.scheme == "content") {
-        val cursor = context.contentResolver.query(uri, null, null, null, null)
-        cursor?.use {
-            if (it.moveToFirst()) {
-                val index = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (index >= 0) {
-                    val fileName = it.getString(index)
-                    // Копируем файл во временное хранилище приложения
-                    try {
-                        val inputStream = context.contentResolver.openInputStream(uri)
-                        val filesDir = context.filesDir
-                        val tempFile = java.io.File(filesDir, fileName)
-                        inputStream?.use { stream ->
-                            tempFile.outputStream().use { output ->
-                                stream.copyTo(output)
-                            }
-                        }
-                        result = tempFile.absolutePath
-                    } catch (e: Exception) {
-                        Log.e("HomeScreen", "Error copying file", e)
-                    }
-                }
-            }
-        }
-    } else if (uri.scheme == "file") {
-        result = uri.path
-    }
-    return result
-}

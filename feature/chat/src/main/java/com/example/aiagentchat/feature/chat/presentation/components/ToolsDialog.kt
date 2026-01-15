@@ -46,17 +46,16 @@ fun ToolsDialog(
     onDismiss: () -> Unit,
     ollamaEnabled: Boolean = false,
     onOllamaToggle: (Boolean) -> Unit = {},
-    ollamaSelectedFiles: List<String> = emptyList(),
-    onOllamaSelectFile: () -> Unit = {},
-    onOllamaRemoveFile: (String) -> Unit = {},
     rerankingEnabled: Boolean = false,
     onRerankingToggle: (Boolean) -> Unit = {},
-    projectHelperEnabled: Boolean = false,
-    onProjectHelperToggle: (Boolean) -> Unit = {},
     githubMcpEnabled: Boolean = false,
     onGitHubMcpToggle: (Boolean) -> Unit = {},
     projectReviewModeEnabled: Boolean = false,
-    onProjectReviewModeToggle: (Boolean) -> Unit = {}
+    onProjectReviewModeToggle: (Boolean) -> Unit = {},
+    projectTeamAssistantEnabled: Boolean = false,
+    onProjectTeamAssistantToggle: (Boolean) -> Unit = {},
+    localMcpServerEnabled: Boolean = false,
+    onLocalMcpServerToggle: (Boolean) -> Unit = {}
 ) {
     BasicAlertDialog(
         onDismissRequest = onDismiss,
@@ -108,34 +107,23 @@ fun ToolsDialog(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     item {
-                        ProjectHelperItem(
-                            enabled = projectHelperEnabled,
-                            onToggle = onProjectHelperToggle
-                        )
-                    }
-                    item {
-                        OllamaItem(
-                            enabled = ollamaEnabled,
-                            onToggle = onOllamaToggle,
-                            selectedFiles = ollamaSelectedFiles,
-                            onRemoveFile = onOllamaRemoveFile,
-                            onSelectFile = onOllamaSelectFile,
-                            rerankingEnabled = rerankingEnabled,
-                            onRerankingToggle = onRerankingToggle,
-                            projectHelperEnabled = projectHelperEnabled,
-                            projectReviewModeEnabled = projectReviewModeEnabled
-                        )
-                    }
-                    item {
                         GitHubMcpItem(
                             enabled = githubMcpEnabled,
                             onToggle = onGitHubMcpToggle
                         )
                     }
                     item {
-                        ProjectReviewModeItem(
-                            enabled = projectReviewModeEnabled,
-                            onToggle = onProjectReviewModeToggle
+                        OllamaItem(
+                            enabled = ollamaEnabled,
+                            onToggle = onOllamaToggle,
+                            rerankingEnabled = rerankingEnabled,
+                            onRerankingToggle = onRerankingToggle,
+                            projectReviewModeEnabled = projectReviewModeEnabled,
+                            onProjectReviewModeToggle = onProjectReviewModeToggle,
+                            projectTeamAssistantEnabled = projectTeamAssistantEnabled,
+                            onProjectTeamAssistantToggle = onProjectTeamAssistantToggle,
+                            localMcpServerEnabled = localMcpServerEnabled,
+                            onLocalMcpServerToggle = onLocalMcpServerToggle
                         )
                     }
                 }
@@ -144,62 +132,19 @@ fun ToolsDialog(
     }
 }
 
-@Composable
-private fun ProjectHelperItem(
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit
-) {
-    Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        text = "Project helper",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Enable project assistant. Works with project files (.kt, .xml, .java, .kts, .md, .sh) from current project. No file limit.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-                Switch(
-                    checked = enabled,
-                    onCheckedChange = onToggle
-                )
-            }
-        }
-    }
-}
 
 @Composable
 private fun OllamaItem(
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
-    selectedFiles: List<String> = emptyList(),
-    onSelectFile: () -> Unit = {},
-    onRemoveFile: (String) -> Unit = {},
     rerankingEnabled: Boolean = false,
     onRerankingToggle: (Boolean) -> Unit = {},
-    projectHelperEnabled: Boolean = false,
-    projectReviewModeEnabled: Boolean = false
+    projectReviewModeEnabled: Boolean = false,
+    onProjectReviewModeToggle: (Boolean) -> Unit = {},
+    projectTeamAssistantEnabled: Boolean = false,
+    onProjectTeamAssistantToggle: (Boolean) -> Unit = {},
+    localMcpServerEnabled: Boolean = false,
+    onLocalMcpServerToggle: (Boolean) -> Unit = {}
 ) {
     Surface(
         shape = MaterialTheme.shapes.medium,
@@ -226,7 +171,7 @@ private fun OllamaItem(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Enable vector search using Ollama embeddings. Attach a file (.md/.txt/.pdf) for indexing.",
+                        text = "Enable vector search using Ollama embeddings. Works with project files (.kt, .xml, .java, .kts, .sh) from current project.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp)
@@ -238,72 +183,7 @@ private fun OllamaItem(
                 )
             }
             
-            if (enabled && !projectHelperEnabled && !projectReviewModeEnabled) {
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 12.dp),
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                )
-                
-                Column {
-                    Text(
-                        text = "Document Files (up to 5)",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    Text(
-                        text = "Select files (.md, .txt, or .pdf) to index for vector search. Maximum 5 files.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    
-                    androidx.compose.material3.Button(
-                        onClick = onSelectFile,
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = selectedFiles.size < 5
-                    ) {
-                        Text(if (selectedFiles.size < 5) "Add File (${selectedFiles.size}/5)" else "Maximum 5 files reached")
-                    }
-                    
-                    if (selectedFiles.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Selected Files (${selectedFiles.size}/5):",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                        selectedFiles.forEach { filePath ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "• ${java.io.File(filePath).name}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                androidx.compose.material3.IconButton(
-                                    onClick = { onRemoveFile(filePath) }
-                                ) {
-                                    androidx.compose.material3.Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Remove file",
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-                
+            if (enabled) {
                 HorizontalDivider(
                     modifier = Modifier.padding(vertical = 12.dp),
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
@@ -345,6 +225,104 @@ private fun OllamaItem(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 4.dp)
                         )
+                    }
+                }
+                
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 12.dp),
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                )
+                
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = "Project Review Mode",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                            Text(
+                                text = "Works with project files (.kt, .xml, .java, .kts, .sh) from current project codebase.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = projectReviewModeEnabled,
+                            onCheckedChange = onProjectReviewModeToggle
+                        )
+                    }
+                }
+                
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 12.dp),
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                )
+                
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = "Project Team Assistant",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                            Text(
+                                text = "Analyzes project codebase and generates technical tasks based on problematic areas. Use /tasks command.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = projectTeamAssistantEnabled,
+                            onCheckedChange = onProjectTeamAssistantToggle
+                        )
+                    }
+                    
+                    if (projectTeamAssistantEnabled) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    text = "Local MCP Server",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.padding(bottom = 4.dp)
+                                )
+                                Text(
+                                    text = "Enable local MCP server for Project Team Assistant functionality.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = localMcpServerEnabled,
+                                onCheckedChange = onLocalMcpServerToggle
+                            )
+                        }
                     }
                 }
             }
@@ -397,47 +375,3 @@ private fun GitHubMcpItem(
     }
 }
 
-@Composable
-private fun ProjectReviewModeItem(
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit
-) {
-    Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        text = "Project Review Mode",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "When enabled, hides file upload UI and automatically embeds changed files (.kt, .xml, .java, .kts, .sh) for code review. Use /review command to trigger review.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-                Switch(
-                    checked = enabled,
-                    onCheckedChange = onToggle
-                )
-            }
-        }
-    }
-}

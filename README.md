@@ -49,11 +49,11 @@ GITHUB_PERSONAL_ACCESS_TOKEN=your_github_personal_access_token_here
 - Выберите scopes: `repo`, `read:packages`, `read:org`
 - Используется для GitHub MCP Server (code review с PR diffs)
 
-## Project Helper - Ассистент разработчика
+## Project Review Mode - Работа с файлами проекта
 
-Проект поддерживает ассистента разработчика, который работает с файлами текущего проекта (.kt, .xml, .java, .kts, .md, .sh).
+Проект поддерживает режим работы с файлами текущего проекта (.kt, .xml, .java, .kts, .sh) через Ollama Vector Search.
 
-### Настройка Project Helper
+### Настройка Project Review Mode
 
 1. **Запустите Ollama сервер (ОБЯЗАТЕЛЬНО!):**
    ```bash
@@ -71,14 +71,65 @@ GITHUB_PERSONAL_ACCESS_TOKEN=your_github_personal_access_token_here
 
 3. **В приложении:**
    - Откройте настройки (⚙️)
-   - Включите "Project helper" (switcher)
-   - При включении автоматически индексируются все файлы проекта (.kt, .xml, .java, .kts, .md, .sh)
+   - Включите "Ollama Vector Search"
+   - Включите "Project Review Mode" (внутри Ollama Vector Search)
+   - При включении автоматически индексируются все файлы проекта (.kt, .xml, .java, .kts, .sh)
 
 4. **Использование:**
    - Введите `/help ваш вопрос` в чате для получения ответа на основе документации проекта
-   - При включенном Project Helper + Ollama Vector Search все запросы используют RAG с файлами проекта
+   - При включенном Project Review Mode + Ollama Vector Search все запросы используют RAG с файлами проекта
 
 Подробнее см. [20HW_PROJECT_ASSISTENT.md](20HW_PROJECT_ASSISTENT.md)
+
+## Project Team Assistant - Ассистент команды
+
+Проект поддерживает ассистента команды, который анализирует кодовую базу и генерирует технические задачи на основе проблемных мест.
+
+### Настройка Project Team Assistant
+
+1. **Запустите Ollama сервер (ОБЯЗАТЕЛЬНО!):**
+   ```bash
+   ./setup-ollama.sh
+   ```
+
+2. **Запустите Project Helper MCP Server:**
+   ```bash
+   cd project-helper-mcp-server
+   ./start-server.sh [PORT] [PROJECT_ROOT] [OLLAMA_URL]
+   
+   # Пример (по умолчанию):
+   ./start-server.sh 8081 /Users/Victor/work/hw-1-AI-chat-bot http://localhost:11434
+   ```
+
+3. **В приложении:**
+   - Откройте настройки (⚙️)
+   - Включите "Ollama Vector Search"
+   - Включите "Project Team Assistant" (внутри Ollama Vector Search)
+   - Опционально включите "Local MCP Server" (внутри Project Team Assistant)
+   - При включении автоматически начнется индексация файлов проекта
+
+4. **Использование:**
+   - Введите `/tasks` в чате
+   - AI проанализирует проект и сгенерирует 3 технические задачи:
+     - 1 критическая
+     - 1 важная
+     - 1 обычная
+   - Каждая задача содержит:
+     - Название (max 300 tokens)
+     - Источник проблемы (max 300 tokens)
+     - Описание (max 1000 tokens)
+     - Ожидаемый результат (max 500 tokens)
+
+### Правила для разработки
+
+AI ищет проблемные места по следующим правилам:
+- Memory leaks (утечки памяти)
+- Crashes (потенциальные краши)
+- Non security values (небезопасные значения)
+- Clean architecture (нарушения чистой архитектуры)
+- Non thread safe logic (непотокобезопасная логика)
+
+Подробнее см. [23HW_PROJECT_TEAM_ASSISTENT.md](24HW_PROJECT_TEAM_ASSISTENT.md)
 
 ## Git MCP Server - Доступ к Git репозиторию
 
