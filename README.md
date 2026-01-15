@@ -129,7 +129,7 @@ AI ищет проблемные места по следующим правил
 - Clean architecture (нарушения чистой архитектуры)
 - Non thread safe logic (непотокобезопасная логика)
 
-Подробнее см. [23HW_PROJECT_TEAM_ASSISTENT.md](24HW_PROJECT_TEAM_ASSISTENT.md)
+Подробнее см. [23HW_PROJECT_TEAM_ASSISTENT.md](23HW_PROJECT_TEAM_ASSISTENT.md)
 
 ## Git MCP Server - Доступ к Git репозиторию
 
