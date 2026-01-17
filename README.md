@@ -602,6 +602,95 @@ adb install app/build/outputs/apk/debug/app-debug.apk
   2. Проверьте, что reranking включен в настройках
   3. Проверьте логи приложения на наличие ошибок при reranking
 
+## AI Release Pipeline
+
+Проект включает автоматизированный пайплайн релиза Android приложения с использованием DeepSeek API, RAG системы и Google Play Console API.
+
+### Команда /publish
+
+В приложении введите `/publish` в чате для получения инструкций по запуску релиза.
+
+### Локальный запуск
+
+1. **Настройте переменные окружения:**
+   ```bash
+   # Создайте .env файл в корне проекта
+   DEEPSEEK_API_KEY=your_key
+   SIGNING_STORE_FILE=keystore.jks
+   SIGNING_STORE_PASSWORD=your_password
+   SIGNING_KEY_ALIAS=release
+   SIGNING_KEY_PASSWORD=your_password
+   ```
+
+2. **Валидация настройки:**
+   ```bash
+   ./scripts/validate-setup.sh
+   ```
+
+3. **Запуск пайплайна:**
+   ```bash
+   ./scripts/run-local-release.sh [previous_tag] [track]
+   
+   # Пример:
+   ./scripts/run-local-release.sh v1.0.0 internal
+   ```
+
+### CI/CD через GitHub Actions
+
+1. **Настройте GitHub Secrets:**
+   - `DEEPSEEK_API_KEY` - API ключ для DeepSeek
+   - `KEYSTORE_BASE64` - keystore файл в base64
+   - `SIGNING_STORE_PASSWORD` - пароль от keystore
+   - `SIGNING_KEY_ALIAS` - алиас ключа
+   - `SIGNING_KEY_PASSWORD` - пароль ключа
+   - `PLAY_STORE_JSON_BASE64` - Service Account JSON для Play Console в base64
+
+2. **Создайте git tag:**
+   ```bash
+   git tag v1.0.1
+   git push origin v1.0.1
+   ```
+
+3. **Workflow автоматически запустится** и выполнит:
+   - Анализ изменений через DeepSeek API + RAG
+   - Генерацию release notes
+   - Обновление версии
+   - Сборку AAB
+   - Деплой в Google Play Store
+
+### Компоненты пайплайна
+
+- **analyzeChanges** - Анализ изменений через DeepSeek API и RAG систему
+- **generateRelease** - Генерация release notes и артефактов
+- **bumpVersion** - Автоматическое обновление версии в build.gradle.kts
+- **bundleRelease** - Сборка AAB файла
+- **deployToStore** - Деплой в Google Play Store
+
+### Результаты
+
+После выполнения пайплайна создаются:
+- `build/release-analysis.json` - AI анализ изменений
+- `build/release-artifacts/RELEASE_NOTES.md` - Release notes
+- `build/release-artifacts/play-store-ru.txt` - Play Store metadata (RU)
+- `build/release-artifacts/play-store-en.txt` - Play Store metadata (EN)
+- `CHANGELOG.md` - Обновленный changelog
+
+### Настройка Play Store деплоя
+
+Для автоматического деплоя в Google Play Store требуется Service Account JSON файл.
+
+**Если файл отсутствует:**
+- Пайплайн автоматически пропустит деплой в Play Store
+- Все остальные артефакты будут созданы успешно
+- Вы увидите предупреждение с инструкциями
+
+**Для включения деплоя:**
+1. Следуйте инструкциям в [PLAY_STORE_SETUP.md](PLAY_STORE_SETUP.md)
+2. Сохраните Service Account JSON как `play-store-key.json` в корне проекта
+3. Или используйте `DRY_RUN=true` для тестирования без деплоя
+
+Подробнее см. [24HW_PROJECT_PUBLISH_ASSISTENT.md](24HW_PROJECT_PUBLISH_ASSISTENT.md)
+
 ## Тестирование
 
 - **Unit-тесты**: JUnit5 + MockK

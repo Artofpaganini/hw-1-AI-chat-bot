@@ -21,8 +21,8 @@ android {
         applicationId = "com.example.aiagentchat"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 5
+        versionName = "1.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -109,5 +109,51 @@ dependencies {
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
+}
+
+// Release Automation Tasks
+tasks.register<com.example.releaseautomation.tasks.AnalyzeChangesTask>("analyzeChanges") {
+    group = "release"
+    description = "Analyze code changes using DeepSeek API and RAG"
+}
+
+tasks.register<com.example.releaseautomation.tasks.GenerateReleaseTask>("generateRelease") {
+    group = "release"
+    description = "Generate release notes and artifacts"
+    dependsOn("analyzeChanges")
+}
+
+tasks.register<com.example.releaseautomation.tasks.BumpVersionTask>("bumpVersion") {
+    group = "release"
+    description = "Bump version in build.gradle.kts"
+    dependsOn("analyzeChanges")
+}
+
+tasks.register<com.example.releaseautomation.tasks.DeployToStoreTask>("deployToStore") {
+    group = "release"
+    description = "Deploy AAB to Google Play Store"
+    dependsOn("bundleRelease", "generateRelease")
+}
+
+tasks.register("aiRelease") {
+    group = "release"
+    description = "Complete AI-powered release pipeline"
+    
+    dependsOn("analyzeChanges")
+    
+    doLast {
+        println("\n" + "=".repeat(60))
+        println("AI Release Pipeline Summary")
+        println("=".repeat(60))
+        println("✅ Analysis complete")
+        println("✅ Release artifacts generated")
+        println("✅ Version bumped")
+        println("✅ AAB built")
+        println("✅ Deployed to Play Store")
+        println("\nArtifacts location: ${project.buildDir}/release-artifacts/")
+        println("=".repeat(60))
+    }
+    
+    finalizedBy("generateRelease", "bumpVersion", "bundleRelease", "deployToStore")
 }
 

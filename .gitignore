@@ -96,3 +96,12 @@ app/src/main/assets/version.properties
 
 # GitHub MCP Server
 github-mcp-server/.env
+
+# Release Automation
+.env
+keystore.jks
+play-store-key.json
+*.aab
+build/release-artifacts/
+build/release-analysis.json
+build/rag-index.db

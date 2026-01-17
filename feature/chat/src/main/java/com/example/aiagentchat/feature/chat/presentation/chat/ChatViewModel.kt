@@ -241,6 +241,12 @@ class ChatViewModel(
                 return@launch
             }
             
+            // Проверяем команду /publish
+            if (currentInput.startsWith("/publish", ignoreCase = true)) {
+                executePublishCommand(userMessage)
+                return@launch
+            }
+            
             // Если включен Project Review Mode + Ollama Vector Search, используем RAG с файлами проекта
             if (projectReviewModeEnabled && ollamaEnabled) {
                 handleSendMessageWithProjectReviewMode(currentInput, userMessage)
@@ -1658,6 +1664,81 @@ class ChatViewModel(
                 )
             }
             _events.emit(ChatEvent.ShowError("Error executing /tasks command: ${e.message}"))
+        }
+    }
+    
+    private suspend fun executePublishCommand(userMessage: Message) {
+        try {
+            android.util.Log.d("ChatViewModel", "🚀 Processing /publish command")
+            
+            _uiState.update { state ->
+                state.copy(isLoading = true, error = null)
+            }
+            
+            val publishInstructions = buildString {
+                appendLine("# 📦 AI Release Pipeline")
+                appendLine()
+                appendLine("## Как запустить релиз:")
+                appendLine()
+                appendLine("### 1. Локально (через терминал):")
+                appendLine("```bash")
+                appendLine("# Установите переменные окружения")
+                appendLine("export DEEPSEEK_API_KEY=your_key")
+                appendLine("export SIGNING_STORE_FILE=keystore.jks")
+                appendLine("export SIGNING_STORE_PASSWORD=your_password")
+                appendLine("export SIGNING_KEY_ALIAS=release")
+                appendLine("export SIGNING_KEY_PASSWORD=your_password")
+                appendLine()
+                appendLine("# Запустите пайплайн")
+                appendLine("./gradlew aiRelease -PpreviousTag=v1.0.0 -Ptrack=internal")
+                appendLine("```")
+                appendLine()
+                appendLine("### 2. Через GitHub Actions:")
+                appendLine("- Создайте git tag: `git tag v1.0.1`")
+                appendLine("- Push тег: `git push origin v1.0.1`")
+                appendLine("- Workflow автоматически запустится")
+                appendLine()
+                appendLine("### 3. Компоненты пайплайна:")
+                appendLine("- ✅ **analyzeChanges** - Анализ изменений через DeepSeek API + RAG")
+                appendLine("- ✅ **generateRelease** - Генерация release notes и артефактов")
+                appendLine("- ✅ **bumpVersion** - Автоматическое обновление версии")
+                appendLine("- ✅ **bundleRelease** - Сборка AAB")
+                appendLine("- ✅ **deployToStore** - Деплой в Google Play Store")
+                appendLine()
+                appendLine("### 4. Требования:")
+                appendLine("- DEEPSEEK_API_KEY в env или GitHub Secrets")
+                appendLine("- Keystore файл для подписи")
+                appendLine("- Service Account JSON для Play Console")
+                appendLine()
+                appendLine("### 5. Результаты:")
+                appendLine("- `build/release-analysis.json` - AI анализ")
+                appendLine("- `build/release-artifacts/` - Release notes, Play Store metadata")
+                appendLine("- `CHANGELOG.md` - Обновленный changelog")
+                appendLine()
+                appendLine("**Примечание:** Для полного функционала требуется настройка всех секретов и ключей.")
+            }
+            
+            val aiMessage = Message(
+                content = publishInstructions,
+                isUser = false
+            )
+            
+            chatRepository.saveMessage(aiMessage)
+            _uiState.update { state ->
+                state.copy(
+                    isLoading = false,
+                    error = null
+                )
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "❌ Error executing /publish command", e)
+            _uiState.update { state ->
+                state.copy(
+                    isLoading = false,
+                    error = e.message ?: "Unknown error occurred"
+                )
+            }
+            _events.emit(ChatEvent.ShowError("Error executing /publish command: ${e.message}"))
         }
     }
     
