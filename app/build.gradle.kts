@@ -55,8 +55,31 @@ android {
         buildConfigField("String", "PROJECT_ROOT", "\"$projectRoot\"")
     }
 
+    signingConfigs {
+        val keystoreFile = rootProject.file("keystore.jks")
+        val keystorePassword = System.getenv("SIGNING_STORE_PASSWORD") 
+            ?: localProperties.getProperty("SIGNING_STORE_PASSWORD") ?: ""
+        val keyAlias = System.getenv("SIGNING_KEY_ALIAS") 
+            ?: localProperties.getProperty("SIGNING_KEY_ALIAS") ?: "release"
+        val keyPassword = System.getenv("SIGNING_KEY_PASSWORD") 
+            ?: localProperties.getProperty("SIGNING_KEY_PASSWORD") ?: ""
+        
+        if (keystoreFile.exists() && keystorePassword.isNotEmpty()) {
+            create("release") {
+                storeFile = keystoreFile
+                storePassword = keystorePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
+            val releaseSigningConfig = signingConfigs.findByName("release")
+            if (releaseSigningConfig != null) {
+                signingConfig = releaseSigningConfig
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -148,12 +171,13 @@ tasks.register("aiRelease") {
         println("✅ Analysis complete")
         println("✅ Release artifacts generated")
         println("✅ Version bumped")
-        println("✅ AAB built")
+        println("✅ APK built: ${project.buildDir}/outputs/apk/release/app-release.apk")
+        println("✅ AAB built: ${project.buildDir}/outputs/bundle/release/app-release.aab")
         println("✅ Deployed to Play Store")
         println("\nArtifacts location: ${project.buildDir}/release-artifacts/")
         println("=".repeat(60))
     }
     
-    finalizedBy("generateRelease", "bumpVersion", "bundleRelease", "deployToStore")
+    finalizedBy("generateRelease", "bumpVersion", "assembleRelease", "bundleRelease", "deployToStore")
 }
 

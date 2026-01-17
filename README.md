@@ -637,26 +637,28 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ### CI/CD через GitHub Actions
 
+**📖 Полная инструкция:** [GITHUB_ACTIONS_SETUP.md](GITHUB_ACTIONS_SETUP.md)
+
 1. **Настройте GitHub Secrets:**
    - `DEEPSEEK_API_KEY` - API ключ для DeepSeek
    - `KEYSTORE_BASE64` - keystore файл в base64
    - `SIGNING_STORE_PASSWORD` - пароль от keystore
    - `SIGNING_KEY_ALIAS` - алиас ключа
    - `SIGNING_KEY_PASSWORD` - пароль ключа
-   - `PLAY_STORE_JSON_BASE64` - Service Account JSON для Play Console в base64
+   - `PLAY_STORE_JSON_BASE64` - Service Account JSON для Play Console (опционально)
 
 2. **Создайте git tag:**
    ```bash
-   git tag v1.0.1
-   git push origin v1.0.1
+   git tag v1.4.0
+   git push origin v1.4.0
    ```
 
 3. **Workflow автоматически запустится** и выполнит:
    - Анализ изменений через DeepSeek API + RAG
-   - Генерацию release notes
-   - Обновление версии
-   - Сборку AAB
-   - Деплой в Google Play Store
+   - Генерацию release notes на русском и английском
+   - Сборку подписанного APK и AAB
+   - Создание GitHub Release с APK
+   - Деплой в Google Play Store (если настроен)
 
 ### Компоненты пайплайна
 
@@ -674,6 +676,10 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 - `build/release-artifacts/play-store-ru.txt` - Play Store metadata (RU)
 - `build/release-artifacts/play-store-en.txt` - Play Store metadata (EN)
 - `CHANGELOG.md` - Обновленный changelog
+- `app/build/outputs/apk/release/app-release.apk` - Подписанный APK
+- `app/build/outputs/bundle/release/app-release.aab` - Android App Bundle
+
+**В GitHub Actions:** APK и AAB автоматически добавляются в GitHub Release!
 
 ### Настройка Play Store деплоя
 

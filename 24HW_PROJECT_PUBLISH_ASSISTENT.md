@@ -1,5 +1,7 @@
 # 24HW_PROJECT_PUBLISH_ASSISTENT.md
 
+> **Обновлено:** Добавлена полная интеграция с GitHub Actions для автоматического создания релизов с APK. См. [GITHUB_ACTIONS_SETUP.md](GITHUB_ACTIONS_SETUP.md)
+
 ## Промпт задачи
 
 ```
