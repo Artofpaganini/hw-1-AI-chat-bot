@@ -33,14 +33,24 @@ abstract class AnalyzeChangesTask : DefaultTask() {
     @TaskAction
     fun analyze() {
         // Пытаемся получить API ключ из env, если не установлен в task
-        val apiKey = if (deepseekApiKey.isBlank()) {
+        var apiKey = if (deepseekApiKey.isBlank()) {
             System.getenv("DEEPSEEK_API_KEY") ?: ""
         } else {
             deepseekApiKey
         }
         
+        // Очищаем API ключ от пробелов и переносов строк
+        apiKey = apiKey
+            .trim()
+            .replace("\n", "")
+            .replace("\r", "")
+            .replace("\t", "")
+            .replace(" ", "")
+        
         if (apiKey.isBlank()) {
-            logger.warning("DEEPSEEK_API_KEY is not set. Analysis will use fallback mode.")
+            logger.warning("DEEPSEEK_API_KEY is not set or is blank after sanitization. Analysis will use fallback mode.")
+        } else {
+            logger.info("API key length: ${apiKey.length}, starts with: ${apiKey.take(3)}")
         }
         
         val projectRoot = project.rootDir

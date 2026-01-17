@@ -13,10 +13,27 @@ import kotlinx.serialization.json.Json
 import java.util.logging.Logger
 
 class DeepSeekClient(
-    private val apiKey: String,
+    apiKey: String,
     private val baseUrl: String = "https://api.deepseek.com"
 ) {
     private val logger = Logger.getLogger(DeepSeekClient::class.java.name)
+    
+    // Очищаем API ключ от пробелов, переносов строк и других недопустимых символов
+    private val apiKey: String = apiKey
+        .trim()
+        .replace("\n", "")
+        .replace("\r", "")
+        .replace("\t", "")
+        .replace(" ", "")
+        .filter { it.isLetterOrDigit() || it == '-' || it == '_' || it == '.' }
+    
+    init {
+        if (this.apiKey.isBlank()) {
+            logger.warning("API key is blank after sanitization")
+        } else if (!this.apiKey.startsWith("sk-")) {
+            logger.warning("API key doesn't start with 'sk-', might be invalid")
+        }
+    }
     
     private val json = Json {
         ignoreUnknownKeys = true
@@ -44,7 +61,12 @@ class DeepSeekClient(
     
     private fun HttpRequestBuilder.setupRequest() {
         url("$baseUrl/v1/chat/completions")
-        header(HttpHeaders.Authorization, "Bearer $apiKey")
+        // Дополнительная очистка перед установкой заголовка
+        val cleanApiKey = apiKey.trim()
+        if (cleanApiKey.isBlank()) {
+            throw IllegalStateException("API key is blank or invalid")
+        }
+        header(HttpHeaders.Authorization, "Bearer $cleanApiKey")
     }
     
     suspend fun analyzeCommitsForRelease(
