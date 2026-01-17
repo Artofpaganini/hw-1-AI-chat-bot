@@ -39,7 +39,7 @@ abstract class AnalyzeChangesTask : DefaultTask() {
             deepseekApiKey
         }
         
-        // Очищаем API ключ от пробелов и переносов строк
+        // Очищаем API ключ только от пробелов и переносов строк (не удаляем валидные символы)
         apiKey = apiKey
             .trim()
             .replace("\n", "")
@@ -50,7 +50,11 @@ abstract class AnalyzeChangesTask : DefaultTask() {
         if (apiKey.isBlank()) {
             logger.warning("DEEPSEEK_API_KEY is not set or is blank after sanitization. Analysis will use fallback mode.")
         } else {
-            logger.info("API key length: ${apiKey.length}, starts with: ${apiKey.take(3)}")
+            // Логируем только длину и начало, не весь ключ
+            logger.info("API key found. Length: ${apiKey.length}, starts with: ${apiKey.take(3)}...")
+            if (!apiKey.startsWith("sk-")) {
+                logger.warning("API key doesn't start with 'sk-'. This might cause authentication errors.")
+            }
         }
         
         val projectRoot = project.rootDir

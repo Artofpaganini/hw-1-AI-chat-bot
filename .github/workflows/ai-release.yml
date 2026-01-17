@@ -51,8 +51,30 @@ jobs:
         run: |
           KEYSTORE_B64="${{ secrets.KEYSTORE_BASE64 }}"
           if [ -n "$KEYSTORE_B64" ] && [ "$KEYSTORE_B64" != "" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > keystore.jks
-            echo "✅ Keystore decoded"
+            # Убираем все пробелы и переносы строк из base64 строки
+            KEYSTORE_B64_CLEAN=$(echo "$KEYSTORE_B64" | tr -d '\n\r\t ')
+            # Декодируем base64 в keystore
+            echo "$KEYSTORE_B64_CLEAN" | base64 -d > keystore.jks
+            # Проверяем, что файл создан и не пустой
+            if [ ! -f keystore.jks ]; then
+              echo "❌ Error: keystore.jks file was not created"
+              exit 1
+            fi
+            KEYSTORE_SIZE=$(stat -f%z keystore.jks 2>/dev/null || stat -c%s keystore.jks 2>/dev/null || echo "0")
+            if [ "$KEYSTORE_SIZE" -eq 0 ]; then
+              echo "❌ Error: keystore.jks file is empty"
+              exit 1
+            fi
+            echo "✅ Keystore decoded successfully (size: $KEYSTORE_SIZE bytes)"
+            # Проверяем валидность keystore (если пароль доступен)
+            if [ -n "${{ secrets.SIGNING_STORE_PASSWORD }}" ]; then
+              if keytool -list -v -keystore keystore.jks -storepass "${{ secrets.SIGNING_STORE_PASSWORD }}" > /dev/null 2>&1; then
+                echo "✅ Keystore is valid and password is correct"
+              else
+                echo "⚠️  Warning: Keystore validation failed. This might indicate wrong password or corrupted keystore."
+                echo "⚠️  Continuing anyway, but signing might fail..."
+              fi
+            fi
           else
             echo "⚠️  KEYSTORE_BASE64 secret not set, signing will be skipped"
           fi

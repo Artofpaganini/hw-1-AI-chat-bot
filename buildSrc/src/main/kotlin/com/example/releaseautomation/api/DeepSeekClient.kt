@@ -18,21 +18,26 @@ class DeepSeekClient(
 ) {
     private val logger = Logger.getLogger(DeepSeekClient::class.java.name)
     
-    // Очищаем API ключ от пробелов, переносов строк и других недопустимых символов
+    // Очищаем API ключ только от пробелов и переносов строк, НЕ удаляем валидные символы
+    // DeepSeek API ключи могут содержать буквы, цифры, дефисы, подчеркивания
     private val apiKey: String = apiKey
         .trim()
         .replace("\n", "")
         .replace("\r", "")
         .replace("\t", "")
         .replace(" ", "")
-        .filter { it.isLetterOrDigit() || it == '-' || it == '_' || it == '.' }
+        // НЕ фильтруем символы - оставляем как есть, только убираем whitespace
     
     init {
         if (this.apiKey.isBlank()) {
-            logger.warning("API key is blank after sanitization")
-        } else if (!this.apiKey.startsWith("sk-")) {
-            logger.warning("API key doesn't start with 'sk-', might be invalid")
+            logger.severe("API key is blank after sanitization")
+            throw IllegalStateException("API key cannot be blank")
         }
+        if (!this.apiKey.startsWith("sk-")) {
+            logger.warning("API key doesn't start with 'sk-', might be invalid. Key preview: ${this.apiKey.take(10)}...")
+        }
+        // Логируем длину для отладки (без самого ключа)
+        logger.info("API key initialized. Length: ${this.apiKey.length}, starts with: ${this.apiKey.take(3)}")
     }
     
     private val json = Json {
@@ -61,12 +66,12 @@ class DeepSeekClient(
     
     private fun HttpRequestBuilder.setupRequest() {
         url("$baseUrl/v1/chat/completions")
-        // Дополнительная очистка перед установкой заголовка
-        val cleanApiKey = apiKey.trim()
-        if (cleanApiKey.isBlank()) {
+        // API ключ уже очищен в init, просто используем его
+        if (apiKey.isBlank()) {
             throw IllegalStateException("API key is blank or invalid")
         }
-        header(HttpHeaders.Authorization, "Bearer $cleanApiKey")
+        // Устанавливаем заголовок Authorization с Bearer токеном
+        header(HttpHeaders.Authorization, "Bearer $apiKey")
     }
     
     suspend fun analyzeCommitsForRelease(
@@ -219,6 +224,20 @@ class DeepSeekClient(
                     "Could not read error body: ${e.message}"
                 }
                 logger.severe("API error ($statusCode): $errorBody")
+                
+                // Специальная обработка для 401 ошибки
+                if (statusCode == HttpStatusCode.Unauthorized.value) {
+                    logger.severe("=".repeat(60))
+                    logger.severe("Authentication failed (401). Please check your DEEPSEEK_API_KEY:")
+                    logger.severe("1. Verify the key is correct in GitHub Secrets")
+                    logger.severe("2. Ensure the key starts with 'sk-'")
+                    logger.severe("3. Check that the key doesn't have extra spaces or newlines")
+                    logger.severe("4. API key length should be around 40-50 characters")
+                    logger.severe("5. Make sure the key is active and has credits")
+                    logger.severe("=".repeat(60))
+                    throw IllegalStateException("DeepSeek API authentication failed (401). Please verify DEEPSEEK_API_KEY in GitHub Secrets. Error: $errorBody")
+                }
+                
                 throw IllegalStateException("DeepSeek API returned error $statusCode: $errorBody")
             }
             
@@ -321,8 +340,19 @@ class DeepSeekClient(
                 
                 val statusCode = httpResponse.status.value
                 if (statusCode !in 200..299) {
-                    val errorBody = httpResponse.body<String>()
+                    val errorBody = try {
+                        httpResponse.body<String>()
+                    } catch (e: Exception) {
+                        "Could not read error body: ${e.message}"
+                    }
                     logger.severe("API error ($statusCode): $errorBody")
+                    
+                    // Специальная обработка для 401 ошибки
+                    if (statusCode == HttpStatusCode.Unauthorized.value) {
+                        logger.severe("Authentication failed (401). Please check your DEEPSEEK_API_KEY in GitHub Secrets.")
+                        throw IllegalStateException("DeepSeek API authentication failed (401). Please verify DEEPSEEK_API_KEY. Error: $errorBody")
+                    }
+                    
                     throw IllegalStateException("DeepSeek API returned error $statusCode: $errorBody")
                 }
                 

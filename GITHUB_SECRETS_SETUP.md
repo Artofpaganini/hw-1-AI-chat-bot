@@ -49,23 +49,41 @@ keytool -genkey -v \
   -keypass YOUR_KEY_PASSWORD
 ```
 
-**Шаг 2: Закодируйте keystore в base64**
+**Шаг 2: Закодируйте keystore в base64 (ОДНОЙ СТРОКОЙ)**
 ```bash
-# На Mac/Linux:
-base64 -i keystore.jks
+# На Mac/Linux (ВАЖНО: без переносов строк):
+base64 -i keystore.jks | tr -d '\n' > keystore_base64.txt
 
-# Или:
-base64 keystore.jks
+# Или одной командой:
+base64 -i keystore.jks | tr -d '\n'
 
 # На Windows (PowerShell):
 [Convert]::ToBase64String([IO.File]::ReadAllBytes("keystore.jks"))
 ```
 
-**Важно:** Скопируйте ВЕСЬ вывод команды (может быть очень длинным, несколько строк)
+**⚠️ КРИТИЧЕСКИ ВАЖНО:**
+- Base64 должен быть **ОДНОЙ СТРОКОЙ** без переносов строк
+- Используйте `tr -d '\n'` для удаления переносов строк
+- Скопируйте ВЕСЬ вывод команды
+- Не добавляйте пробелы или другие символы
+
+**Шаг 3: Проверьте валидность keystore перед кодированием**
+```bash
+# Убедитесь, что keystore валиден:
+keytool -list -v -keystore keystore.jks -storepass YOUR_STORE_PASSWORD
+
+# Должно показать информацию о keystore без ошибок
+```
 
 **Как сохранить:**
 - Имя секрета: `KEYSTORE_BASE64`
-- Значение: вставьте весь base64 вывод (начинается с чего-то вроде `MIIDXTCCAkWgAwIBAg...`)
+- Значение: вставьте весь base64 вывод **ОДНОЙ СТРОКОЙ** (начинается с `MIIDXTCCAkWgAwIBAg...`)
+
+**Проверка после сохранения:**
+После сохранения секрета в GitHub, при следующем запуске workflow:
+- Keystore будет автоматически проверен на валидность
+- Если пароль неверный, вы увидите предупреждение
+- Если keystore поврежден, workflow остановится с ошибкой
 
 ---
 
