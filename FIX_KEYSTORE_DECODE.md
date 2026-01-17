@@ -17,8 +17,29 @@
 Workflow теперь:
 - ✅ Автоматически удаляет переносы строк из base64 перед декодированием
 - ✅ Проверяет размер keystore после декодирования
-- ✅ Валидирует keystore с паролем (если доступен)
-- ✅ Выводит понятные сообщения об ошибках
+- ✅ Валидирует keystore с паролем и алиасом
+- ✅ Проверяет магические байты keystore
+- ✅ Выводит детальные сообщения об ошибках
+- ✅ Останавливает выполнение при ошибке валидации
+
+### 2. Скрипт для локальной проверки
+
+Используйте скрипт `scripts/validate-keystore.sh` для проверки keystore перед добавлением в GitHub:
+
+```bash
+# Базовая проверка (без пароля):
+./scripts/validate-keystore.sh keystore.jks
+
+# Полная проверка (с паролем):
+./scripts/validate-keystore.sh keystore.jks YOUR_PASSWORD release YOUR_KEY_PASSWORD
+```
+
+Скрипт:
+- ✅ Проверяет валидность keystore
+- ✅ Проверяет пароли
+- ✅ Кодирует в base64 правильно
+- ✅ Тестирует декодирование
+- ✅ Выводит готовый base64 для копирования
 
 ### 2. Перекодируйте keystore правильно
 
@@ -111,10 +132,61 @@ base64 -i keystore.jks | tr -d '\n'
 
 ## 🔄 Если проблема сохраняется
 
-1. **Проверьте пароль:**
-   - Убедитесь, что `SIGNING_STORE_PASSWORD` правильный
-   - Убедитесь, что `SIGNING_KEY_PASSWORD` правильный
-   - Пароли должны совпадать с теми, что были при создании keystore
+### Шаг 1: Проверьте пароли и алиас
+
+1. **Проверьте пароль keystore:**
+   ```bash
+   # Локально проверьте пароль:
+   keytool -list -keystore keystore.jks -storepass YOUR_PASSWORD
+   # Должно показать список ключей без ошибок
+   ```
+
+2. **Проверьте алиас:**
+   ```bash
+   # Убедитесь, что алиас существует:
+   keytool -list -keystore keystore.jks -storepass YOUR_PASSWORD
+   # Найдите ваш алиас в списке (обычно 'release')
+   ```
+
+3. **Проверьте пароль ключа:**
+   - `SIGNING_STORE_PASSWORD` - пароль от keystore
+   - `SIGNING_KEY_PASSWORD` - пароль от конкретного ключа (может быть таким же)
+   - `SIGNING_KEY_ALIAS` - алиас ключа (обычно 'release')
+
+### Шаг 2: Перекодируйте keystore заново
+
+**ВАЖНО: Используйте этот точный метод:**
+
+```bash
+# 1. Убедитесь, что keystore валиден:
+keytool -list -v -keystore keystore.jks -storepass YOUR_PASSWORD
+
+# 2. Закодируйте БЕЗ переносов строк (ОДНА СТРОКА):
+base64 -i keystore.jks | tr -d '\n' | tr -d '\r' > keystore_base64.txt
+
+# 3. Проверьте, что файл одной строкой:
+wc -l keystore_base64.txt
+# Должно быть: 1
+
+# 4. Проверьте размер base64 (должен быть примерно в 1.33 раза больше размера keystore):
+ls -lh keystore.jks keystore_base64.txt
+
+# 5. Проверьте декодирование локально:
+cat keystore_base64.txt | base64 -d > test_keystore.jks
+keytool -list -v -keystore test_keystore.jks -storepass YOUR_PASSWORD
+# Должно работать без ошибок
+
+# 6. Скопируйте содержимое keystore_base64.txt в GitHub Secret
+cat keystore_base64.txt
+```
+
+### Шаг 3: Проверьте все секреты
+
+Убедитесь, что все секреты установлены правильно:
+- `KEYSTORE_BASE64` - base64 одной строкой
+- `SIGNING_STORE_PASSWORD` - пароль от keystore
+- `SIGNING_KEY_ALIAS` - алиас (обычно 'release')
+- `SIGNING_KEY_PASSWORD` - пароль от ключа
 
 2. **Пересоздайте keystore (если возможно):**
    ```bash

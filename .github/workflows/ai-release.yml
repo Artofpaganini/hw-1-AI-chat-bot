@@ -50,33 +50,80 @@ jobs:
       - name: Decode Keystore
         run: |
           KEYSTORE_B64="${{ secrets.KEYSTORE_BASE64 }}"
-          if [ -n "$KEYSTORE_B64" ] && [ "$KEYSTORE_B64" != "" ]; then
-            # Убираем все пробелы и переносы строк из base64 строки
-            KEYSTORE_B64_CLEAN=$(echo "$KEYSTORE_B64" | tr -d '\n\r\t ')
-            # Декодируем base64 в keystore
-            echo "$KEYSTORE_B64_CLEAN" | base64 -d > keystore.jks
-            # Проверяем, что файл создан и не пустой
-            if [ ! -f keystore.jks ]; then
-              echo "❌ Error: keystore.jks file was not created"
-              exit 1
-            fi
-            KEYSTORE_SIZE=$(stat -f%z keystore.jks 2>/dev/null || stat -c%s keystore.jks 2>/dev/null || echo "0")
-            if [ "$KEYSTORE_SIZE" -eq 0 ]; then
-              echo "❌ Error: keystore.jks file is empty"
-              exit 1
-            fi
-            echo "✅ Keystore decoded successfully (size: $KEYSTORE_SIZE bytes)"
-            # Проверяем валидность keystore (если пароль доступен)
-            if [ -n "${{ secrets.SIGNING_STORE_PASSWORD }}" ]; then
-              if keytool -list -v -keystore keystore.jks -storepass "${{ secrets.SIGNING_STORE_PASSWORD }}" > /dev/null 2>&1; then
-                echo "✅ Keystore is valid and password is correct"
+          if [ -z "$KEYSTORE_B64" ] || [ "$KEYSTORE_B64" = "" ]; then
+            echo "⚠️  KEYSTORE_BASE64 secret not set, signing will be skipped"
+            exit 0
+          fi
+          
+          echo "Starting keystore decoding..."
+          echo "Base64 length: ${#KEYSTORE_B64} characters"
+          
+          # Убираем все пробелы, переносы строк, табуляции из base64 строки
+          KEYSTORE_B64_CLEAN=$(echo -n "$KEYSTORE_B64" | tr -d '\n\r\t ' | sed 's/[[:space:]]//g')
+          
+          echo "Cleaned base64 length: ${#KEYSTORE_B64_CLEAN} characters"
+          
+          # Проверяем, что base64 не пустой после очистки
+          if [ -z "$KEYSTORE_B64_CLEAN" ] || [ "$KEYSTORE_B64_CLEAN" = "" ]; then
+            echo "❌ Error: Base64 string is empty after cleaning"
+            exit 1
+          fi
+          
+          # Декодируем base64 в keystore
+          echo "$KEYSTORE_B64_CLEAN" | base64 -d > keystore.jks 2>&1
+          DECODE_EXIT_CODE=$?
+          
+          if [ $DECODE_EXIT_CODE -ne 0 ]; then
+            echo "❌ Error: Failed to decode base64. Exit code: $DECODE_EXIT_CODE"
+            echo "First 100 chars of base64: ${KEYSTORE_B64_CLEAN:0:100}..."
+            exit 1
+          fi
+          
+          # Проверяем, что файл создан
+          if [ ! -f keystore.jks ]; then
+            echo "❌ Error: keystore.jks file was not created"
+            exit 1
+          fi
+          
+          # Проверяем размер файла
+          KEYSTORE_SIZE=$(stat -f%z keystore.jks 2>/dev/null || stat -c%s keystore.jks 2>/dev/null || echo "0")
+          if [ "$KEYSTORE_SIZE" -eq 0 ]; then
+            echo "❌ Error: keystore.jks file is empty (0 bytes)"
+            exit 1
+          fi
+          
+          echo "✅ Keystore decoded successfully (size: $KEYSTORE_SIZE bytes)"
+          
+          # Проверяем, что это действительно keystore файл (начинается с магических байтов)
+          FIRST_BYTES=$(head -c 4 keystore.jks | od -An -tx1 | tr -d ' \n')
+          echo "First 4 bytes (hex): $FIRST_BYTES"
+          
+          # Проверяем валидность keystore с паролем
+          STORE_PASS="${{ secrets.SIGNING_STORE_PASSWORD }}"
+          KEY_ALIAS="${{ secrets.SIGNING_KEY_ALIAS }}"
+          
+          if [ -n "$STORE_PASS" ] && [ -n "$KEY_ALIAS" ]; then
+            echo "Validating keystore with provided password..."
+            if keytool -list -v -keystore keystore.jks -storepass "$STORE_PASS" -alias "$KEY_ALIAS" > /dev/null 2>&1; then
+              echo "✅ Keystore is valid and password is correct"
+              echo "✅ Key alias '$KEY_ALIAS' found in keystore"
+            else
+              echo "❌ Error: Keystore validation failed!"
+              echo "This usually means:"
+              echo "  1. Wrong SIGNING_STORE_PASSWORD"
+              echo "  2. Wrong SIGNING_KEY_ALIAS"
+              echo "  3. Corrupted keystore file"
+              echo ""
+              echo "Trying to list all aliases in keystore..."
+              if keytool -list -keystore keystore.jks -storepass "$STORE_PASS" 2>&1 | head -20; then
+                echo "Keystore can be opened, but alias '$KEY_ALIAS' not found"
               else
-                echo "⚠️  Warning: Keystore validation failed. This might indicate wrong password or corrupted keystore."
-                echo "⚠️  Continuing anyway, but signing might fail..."
+                echo "Cannot open keystore with provided password"
               fi
+              exit 1
             fi
           else
-            echo "⚠️  KEYSTORE_BASE64 secret not set, signing will be skipped"
+            echo "⚠️  Warning: Cannot validate keystore (missing password or alias)"
           fi
       
       - name: Decode Play Store Key
