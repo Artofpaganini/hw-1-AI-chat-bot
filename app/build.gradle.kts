@@ -72,19 +72,62 @@ android {
                     "-storepass", keystorePassword, "-alias", keyAlias
                 ).redirectErrorStream(true).start()
                 
+                val output = process.inputStream.bufferedReader().readText()
                 val exitCode = process.waitFor()
+                
                 if (exitCode == 0) {
-                    create("release") {
-                        storeFile = keystoreFile
-                        storePassword = keystorePassword
-                        this.keyAlias = keyAlias
-                        this.keyPassword = keyPassword
+                    // Дополнительная проверка - пытаемся прочитать ключ
+                    val keyProcess = ProcessBuilder(
+                        "keytool", "-list", "-v", "-keystore", keystoreFile.absolutePath,
+                        "-storepass", keystorePassword, "-alias", keyAlias
+                    ).redirectErrorStream(true).start()
+                    
+                    val keyOutput = keyProcess.inputStream.bufferedReader().readText()
+                    val keyExitCode = keyProcess.waitFor()
+                    
+                    if (keyExitCode == 0 && !keyOutput.contains("Given final block not properly padded")) {
+                        create("release") {
+                            storeFile = keystoreFile
+                            storePassword = keystorePassword
+                            this.keyAlias = keyAlias
+                            this.keyPassword = keyPassword
+                        }
+                        println("✅ Keystore validated successfully")
+                    } else {
+                        println("⚠️  Warning: Keystore key validation failed (exit code: $keyExitCode)")
+                        println("⚠️  Error: ${keyOutput.take(200)}")
+                        println("⚠️  Signing will be skipped - keystore appears to be corrupted")
+                        // Удаляем поврежденный keystore, чтобы Gradle не пытался его использовать
+                        try {
+                            keystoreFile.delete()
+                            println("⚠️  Removed invalid keystore file")
+                        } catch (e: Exception) {
+                            println("⚠️  Could not remove keystore file: ${e.message}")
+                        }
                     }
                 } else {
-                    println("⚠️  Warning: Keystore validation failed (exit code: $exitCode), signing will be skipped")
+                    println("⚠️  Warning: Keystore validation failed (exit code: $exitCode)")
+                    println("⚠️  Error output: ${output.take(200)}")
+                    println("⚠️  Signing will be skipped")
+                    // Удаляем поврежденный keystore
+                    try {
+                        keystoreFile.delete()
+                        println("⚠️  Removed invalid keystore file")
+                    } catch (e: Exception) {
+                        println("⚠️  Could not remove keystore file: ${e.message}")
+                    }
                 }
             } catch (e: Exception) {
                 println("⚠️  Warning: Cannot validate keystore (${e.message}), signing will be skipped")
+                // Удаляем поврежденный keystore
+                try {
+                    if (keystoreFile.exists()) {
+                        keystoreFile.delete()
+                        println("⚠️  Removed invalid keystore file")
+                    }
+                } catch (deleteException: Exception) {
+                    println("⚠️  Could not remove keystore file: ${deleteException.message}")
+                }
             }
         }
     }

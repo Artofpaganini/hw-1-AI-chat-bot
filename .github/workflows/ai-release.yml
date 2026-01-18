@@ -196,17 +196,21 @@ jobs:
               echo "⚠️  Warning: Cannot open keystore with provided password (exit code: $KEYTOOL_LIST_EXIT)"
               echo "This might mean:"
               echo "  1. Wrong SIGNING_STORE_PASSWORD"
-              echo "  2. Corrupted keystore file"
+              echo "  2. Corrupted keystore file (possibly due to incorrect base64 encoding)"
               echo ""
               echo "Error output:"
               echo "$KEYTOOL_LIST_OUTPUT" | head -5
               echo ""
-              echo "⚠️  Keystore validation failed, but continuing anyway (signing will be skipped)"
+              echo "⚠️  Keystore validation failed - removing invalid keystore file"
+              echo "⚠️  Build will continue without signing"
+              rm -f keystore.jks
               echo "keystore_available=false" >> $GITHUB_OUTPUT
             fi
           else
             echo "⚠️  Warning: Cannot validate keystore (missing password or alias)"
-            echo "keystore_available=true" >> $GITHUB_OUTPUT
+            echo "⚠️  Removing keystore file to prevent signing errors"
+            rm -f keystore.jks
+            echo "keystore_available=false" >> $GITHUB_OUTPUT
           fi
       
       - name: Decode Play Store Key
@@ -256,10 +260,17 @@ jobs:
           if [ "$SKIP_DEPLOY" == "true" ] || [ -z "$PLAY_STORE_B64" ] || [ "$PLAY_STORE_B64" == "" ]; then
             export DRY_RUN=true
           fi
+          
           # Пропускаем signing если keystore недоступен
           if [ "${{ steps.keystore.outputs.keystore_available }}" != "true" ]; then
-            echo "⚠️  Keystore not available, skipping signing in release pipeline"
+            echo "⚠️  Keystore not available, removing keystore file to prevent signing errors"
+            rm -f keystore.jks
+            echo "⚠️  Build will continue without signing"
+            # Не устанавливаем переменные окружения для signing
+            unset SIGNING_STORE_PASSWORD
+            unset SIGNING_KEY_PASSWORD
           fi
+          
           ./gradlew aiRelease \
             -PpreviousTag="${{ steps.tags.outputs.previous_tag }}" \
             -Ptrack="${{ github.event.inputs.track || 'internal' }}" \
@@ -267,20 +278,25 @@ jobs:
             --stacktrace
       
       - name: Build Release APK
-        env:
-          SIGNING_STORE_FILE: keystore.jks
-          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
-          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
           if [ "${{ steps.keystore.outputs.keystore_available }}" = "true" ] && [ -f "keystore.jks" ]; then
             echo "✅ Keystore is available, building signed APK"
+            export SIGNING_STORE_FILE=keystore.jks
+            export SIGNING_STORE_PASSWORD="${{ secrets.SIGNING_STORE_PASSWORD }}"
+            export SIGNING_KEY_ALIAS="${{ secrets.SIGNING_KEY_ALIAS }}"
+            export SIGNING_KEY_PASSWORD="${{ secrets.SIGNING_KEY_PASSWORD }}"
             ./gradlew :app:assembleRelease --no-daemon
             echo "✅ Release APK built and signed"
           else
             echo "⚠️  Keystore not available or invalid, building unsigned APK"
-            echo "⚠️  This APK cannot be published to Play Store"
+            echo "⚠️  Removing keystore file if it exists to prevent signing errors"
+            rm -f keystore.jks
+            unset SIGNING_STORE_FILE
+            unset SIGNING_STORE_PASSWORD
+            unset SIGNING_KEY_ALIAS
+            unset SIGNING_KEY_PASSWORD
             ./gradlew :app:assembleRelease --no-daemon
+            echo "⚠️  This APK cannot be published to Play Store (unsigned)"
           fi
       
       - name: Find and rename APK
