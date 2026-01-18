@@ -1675,63 +1675,162 @@ class ChatViewModel(
                 state.copy(isLoading = true, error = null)
             }
             
-            val publishInstructions = buildString {
+            // Получаем PROJECT_ROOT из BuildConfig (из app модуля)
+            // Используем путь по умолчанию, так как MCP сервер сам определит projectRoot
+            android.util.Log.d("ChatViewModel", "Executing /publish command via MCP server")
+            
+            // Выполняем команду через Project Helper MCP Server
+            // Скрипт сам определит PROJECT_ROOT из своего расположения
+            val command = "bash scripts/create-and-push-tag.sh"
+            // workingDir не указываем - MCP сервер использует свой projectRoot по умолчанию
+            val workingDir: String? = null
+            
+            val request = JsonRpcRequest(
+                id = requestId++,
+                method = "tools/call",
+                params = mapOf(
+                    "name" to "execute_shell_command",
+                    "arguments" to (if (workingDir != null) {
+                        mapOf(
+                            "command" to command,
+                            "working_directory" to workingDir
+                        )
+                    } else {
+                        mapOf("command" to command)
+                    })
+                )
+            )
+            
+            val response = try {
+                projectHelperMcpApi.sendRequest(request)
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "Failed to execute command via MCP", e)
+                // Fallback - показываем инструкции
+                val fallbackMessage = buildString {
+                    appendLine("# 📦 AI Release Pipeline")
+                    appendLine()
+                    appendLine("⚠️ **Не удалось выполнить команду автоматически**")
+                    appendLine()
+                    appendLine("Выполните вручную в терминале проекта:")
+                    appendLine("```bash")
+                    appendLine("./scripts/create-and-push-tag.sh")
+                    appendLine("```")
+                    appendLine()
+                    appendLine("Скрипт автоматически:")
+                    appendLine("1. Найдет последний тег")
+                    appendLine("2. Инкрементирует версию (v1.4.13 -> v1.4.14 -> v1.5.0)")
+                    appendLine("3. Создаст и запушет новый тег")
+                    appendLine("4. GitHub Actions автоматически запустит релиз")
+                }
+                
+                val aiMessage = Message(
+                    content = fallbackMessage,
+                    isUser = false
+                )
+                
+                chatRepository.saveMessage(aiMessage)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = null
+                    )
+                }
+                return
+            }
+            
+            if (response.isSuccessful && response.body() != null) {
+                val result = response.body()!!
+                
+                if (result.error != null) {
+                    throw Exception(result.error.message)
+                }
+                
+                // Парсим результат из Map (аналогично handleHelpCommand)
+                val resultMap = result.result as? Map<*, *> ?: emptyMap<Any, Any>()
+                
+                // Извлекаем output и exitCode из result
+                val output = when {
+                    resultMap["output"] != null -> resultMap["output"].toString()
+                    resultMap["content"] != null -> {
+                        // Если результат в формате content array (как в других методах)
+                        val content = (resultMap["content"] as? List<*>)?.firstOrNull() as? Map<*, *>
+                        content?.get("text")?.toString() ?: "Command executed"
+                    }
+                    else -> "Command executed"
+                }
+                
+                val exitCode = (resultMap["exitCode"] as? Number)?.toInt() ?: 0
+                
+                val resultMessage = buildString {
+                    appendLine("# 📦 Release Tag Created")
+                    appendLine()
+                    if (exitCode == 0) {
+                        appendLine("✅ **Успешно создан и запушен новый тег!**")
+                        appendLine()
+                        appendLine("```")
+                        appendLine(output)
+                        appendLine("```")
+                        appendLine()
+                        appendLine("GitHub Actions автоматически запустит:")
+                        appendLine("- ✅ AI анализ изменений")
+                        appendLine("- ✅ Генерация release notes")
+                        appendLine("- ✅ Сборка APK и AAB")
+                        appendLine("- ✅ Создание GitHub Release")
+                        appendLine()
+                        appendLine("Проверьте прогресс:")
+                        appendLine("https://github.com/Artofpaganini/hw-1-AI-chat-bot/actions")
+                    } else {
+                        appendLine("⚠️ **Команда выполнена с ошибкой (exit code: $exitCode)**")
+                        appendLine()
+                        appendLine("```")
+                        appendLine(output)
+                        appendLine("```")
+                        appendLine()
+                        appendLine("Проверьте логи и выполните команду вручную:")
+                        appendLine("```bash")
+                        appendLine("./scripts/create-and-push-tag.sh")
+                        appendLine("```")
+                    }
+                }
+                
+                val aiMessage = Message(
+                    content = resultMessage,
+                    isUser = false
+                )
+                
+                chatRepository.saveMessage(aiMessage)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = null
+                    )
+                }
+            } else {
+                throw Exception("Failed to execute command: ${response.message()}")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "❌ Error executing /publish command", e)
+            
+            val errorMessage = buildString {
                 appendLine("# 📦 AI Release Pipeline")
                 appendLine()
-                appendLine("## Как запустить релиз:")
-                appendLine()
-                appendLine("### 1. Локально (через терминал):")
-                appendLine("```bash")
-                appendLine("# Установите переменные окружения")
-                appendLine("export DEEPSEEK_API_KEY=your_key")
-                appendLine("export SIGNING_STORE_FILE=keystore.jks")
-                appendLine("export SIGNING_STORE_PASSWORD=your_password")
-                appendLine("export SIGNING_KEY_ALIAS=release")
-                appendLine("export SIGNING_KEY_PASSWORD=your_password")
-                appendLine()
-                appendLine("# Запустите пайплайн")
-                appendLine("./gradlew aiRelease -PpreviousTag=v1.0.0 -Ptrack=internal")
+                appendLine("❌ **Ошибка при выполнении команды:**")
+                appendLine("```")
+                appendLine(e.message ?: "Unknown error")
                 appendLine("```")
                 appendLine()
-                appendLine("### 2. Через GitHub Actions:")
-                appendLine("- Создайте git tag: `git tag v1.0.1`")
-                appendLine("- Push тег: `git push origin v1.0.1`")
-                appendLine("- Workflow автоматически запустится")
-                appendLine()
-                appendLine("### 3. Компоненты пайплайна:")
-                appendLine("- ✅ **analyzeChanges** - Анализ изменений через DeepSeek API + RAG")
-                appendLine("- ✅ **generateRelease** - Генерация release notes и артефактов")
-                appendLine("- ✅ **bumpVersion** - Автоматическое обновление версии")
-                appendLine("- ✅ **bundleRelease** - Сборка AAB")
-                appendLine("- ✅ **deployToStore** - Деплой в Google Play Store")
-                appendLine()
-                appendLine("### 4. Требования:")
-                appendLine("- DEEPSEEK_API_KEY в env или GitHub Secrets")
-                appendLine("- Keystore файл для подписи")
-                appendLine("- Service Account JSON для Play Console")
-                appendLine()
-                appendLine("### 5. Результаты:")
-                appendLine("- `build/release-analysis.json` - AI анализ")
-                appendLine("- `build/release-artifacts/` - Release notes, Play Store metadata")
-                appendLine("- `CHANGELOG.md` - Обновленный changelog")
-                appendLine()
-                appendLine("**Примечание:** Для полного функционала требуется настройка всех секретов и ключей.")
+                appendLine("Выполните вручную в терминале проекта:")
+                appendLine("```bash")
+                appendLine("./scripts/create-and-push-tag.sh")
+                appendLine("```")
             }
             
             val aiMessage = Message(
-                content = publishInstructions,
+                content = errorMessage,
                 isUser = false
             )
             
             chatRepository.saveMessage(aiMessage)
-            _uiState.update { state ->
-                state.copy(
-                    isLoading = false,
-                    error = null
-                )
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("ChatViewModel", "❌ Error executing /publish command", e)
             _uiState.update { state ->
                 state.copy(
                     isLoading = false,

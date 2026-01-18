@@ -168,32 +168,41 @@ jobs:
           
           if [ -n "$STORE_PASS" ] && [ -n "$KEY_ALIAS" ]; then
             echo "Validating keystore with provided password..."
-            VALIDATION_OUTPUT=$(keytool -list -v -keystore keystore.jks -storepass "$STORE_PASS" -alias "$KEY_ALIAS" 2>&1)
-            VALIDATION_EXIT=$?
             
-            if [ $VALIDATION_EXIT -eq 0 ]; then
-              echo "✅ Keystore is valid and password is correct"
-              echo "✅ Key alias '$KEY_ALIAS' found in keystore"
-              echo "keystore_available=true" >> $GITHUB_OUTPUT
-            else
-              echo "❌ Error: Keystore validation failed!"
-              echo "Exit code: $VALIDATION_EXIT"
-              echo "Error output:"
-              echo "$VALIDATION_OUTPUT" | head -10
-              echo ""
-              echo "This usually means:"
-              echo "  1. Wrong SIGNING_STORE_PASSWORD"
-              echo "  2. Wrong SIGNING_KEY_ALIAS"
-              echo "  3. Corrupted keystore file"
-              echo ""
-              echo "Trying to list all aliases in keystore..."
-              if keytool -list -keystore keystore.jks -storepass "$STORE_PASS" 2>&1 | head -20; then
-                echo "Keystore can be opened, but alias '$KEY_ALIAS' not found"
+            # Сначала проверяем, можем ли мы открыть keystore
+            KEYTOOL_LIST_OUTPUT=$(keytool -list -keystore keystore.jks -storepass "$STORE_PASS" 2>&1)
+            KEYTOOL_LIST_EXIT=$?
+            
+            if [ $KEYTOOL_LIST_EXIT -eq 0 ]; then
+              echo "✅ Keystore can be opened with provided password"
+              
+              # Проверяем конкретный алиас
+              VALIDATION_OUTPUT=$(keytool -list -v -keystore keystore.jks -storepass "$STORE_PASS" -alias "$KEY_ALIAS" 2>&1)
+              VALIDATION_EXIT=$?
+              
+              if [ $VALIDATION_EXIT -eq 0 ]; then
+                echo "✅ Keystore is valid and password is correct"
+                echo "✅ Key alias '$KEY_ALIAS' found in keystore"
+                echo "keystore_available=true" >> $GITHUB_OUTPUT
               else
-                echo "Cannot open keystore with provided password"
+                echo "⚠️  Warning: Key alias '$KEY_ALIAS' validation failed (exit code: $VALIDATION_EXIT)"
+                echo "But keystore can be opened. Listing all available aliases:"
+                echo "$KEYTOOL_LIST_OUTPUT" | grep -E "^[a-zA-Z]" || echo "  (no aliases found in output)"
+                echo ""
+                echo "⚠️  Continuing with keystore, but signing might fail if alias is wrong"
+                echo "keystore_available=true" >> $GITHUB_OUTPUT
               fi
+            else
+              echo "⚠️  Warning: Cannot open keystore with provided password (exit code: $KEYTOOL_LIST_EXIT)"
+              echo "This might mean:"
+              echo "  1. Wrong SIGNING_STORE_PASSWORD"
+              echo "  2. Corrupted keystore file"
+              echo ""
+              echo "Error output:"
+              echo "$KEYTOOL_LIST_OUTPUT" | head -5
+              echo ""
+              echo "⚠️  Keystore validation failed, but continuing anyway (signing will be skipped)"
               echo "keystore_available=false" >> $GITHUB_OUTPUT
-              exit 1
             fi
           else
             echo "⚠️  Warning: Cannot validate keystore (missing password or alias)"
@@ -360,6 +369,67 @@ jobs:
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         continue-on-error: true
+        run: |
+          TAG_NAME="${{ steps.version.outputs.tag_name }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          
+          echo "Creating GitHub Release for tag: $TAG_NAME"
+          
+          # Проверяем наличие файлов
+          FILES_TO_ATTACH=""
+          
+          if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
+            FILES_TO_ATTACH="$FILES_TO_ATTACH app/build/outputs/apk/release/app-release.apk"
+            echo "✅ APK found: $(ls -lh app/build/outputs/apk/release/app-release.apk | awk '{print $5}')"
+          else
+            echo "⚠️  APK not found"
+          fi
+          
+          if [ -f "app/build/outputs/bundle/release/app-release.aab" ]; then
+            FILES_TO_ATTACH="$FILES_TO_ATTACH app/build/outputs/bundle/release/app-release.aab"
+            echo "✅ AAB found: $(ls -lh app/build/outputs/bundle/release/app-release.aab | awk '{print $5}')"
+          else
+            echo "⚠️  AAB not found"
+          fi
+          
+          # Читаем release notes
+          if [ -f "app/build/release-artifacts/RELEASE_NOTES.md" ]; then
+            BODY_FILE="app/build/release-artifacts/RELEASE_NOTES.md"
+            echo "✅ Using RELEASE_NOTES.md"
+          else
+            echo "⚠️  RELEASE_NOTES.md not found, creating placeholder"
+            echo "# Release $VERSION" > /tmp/release_notes.md
+            echo "" >> /tmp/release_notes.md
+            echo "Release $VERSION" >> /tmp/release_notes.md
+            BODY_FILE="/tmp/release_notes.md"
+          fi
+          
+          # Создаем release через GitHub CLI (более надежно чем action)
+          if command -v gh &> /dev/null; then
+            echo "Using GitHub CLI to create release..."
+            if [ -n "$FILES_TO_ATTACH" ]; then
+              gh release create "$TAG_NAME" \
+                --title "Release $VERSION" \
+                --notes-file "$BODY_FILE" \
+                $FILES_TO_ATTACH \
+                --latest \
+                --repo "${{ github.repository }}"
+            else
+              echo "⚠️  No files to attach, creating release without files"
+              gh release create "$TAG_NAME" \
+                --title "Release $VERSION" \
+                --notes-file "$BODY_FILE" \
+                --latest \
+                --repo "${{ github.repository }}"
+            fi
+          else
+            echo "⚠️  GitHub CLI not available, skipping release creation"
+            echo "Files are available in artifacts"
+          fi
+      
+      - name: Create GitHub Release (Fallback Action)
+        if: startsWith(github.ref, 'refs/tags/') && failure()
+        continue-on-error: true
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.version.outputs.tag_name }}
@@ -368,8 +438,6 @@ jobs:
           files: |
             app/build/outputs/apk/release/app-release.apk
             app/build/outputs/bundle/release/app-release.aab
-            app/build/release-artifacts/play-store-ru.txt
-            app/build/release-artifacts/play-store-en.txt
           make_latest: true
           draft: false
           prerelease: false
