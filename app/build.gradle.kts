@@ -65,11 +65,26 @@ android {
             ?: localProperties.getProperty("SIGNING_KEY_PASSWORD") ?: ""
         
         if (keystoreFile.exists() && keystorePassword.isNotEmpty()) {
-            create("release") {
-                storeFile = keystoreFile
-                storePassword = keystorePassword
-                this.keyAlias = keyAlias
-                this.keyPassword = keyPassword
+            try {
+                // Проверяем валидность keystore перед использованием
+                val process = ProcessBuilder(
+                    "keytool", "-list", "-keystore", keystoreFile.absolutePath,
+                    "-storepass", keystorePassword, "-alias", keyAlias
+                ).redirectErrorStream(true).start()
+                
+                val exitCode = process.waitFor()
+                if (exitCode == 0) {
+                    create("release") {
+                        storeFile = keystoreFile
+                        storePassword = keystorePassword
+                        this.keyAlias = keyAlias
+                        this.keyPassword = keyPassword
+                    }
+                } else {
+                    println("⚠️  Warning: Keystore validation failed (exit code: $exitCode), signing will be skipped")
+                }
+            } catch (e: Exception) {
+                println("⚠️  Warning: Cannot validate keystore (${e.message}), signing will be skipped")
             }
         }
     }
