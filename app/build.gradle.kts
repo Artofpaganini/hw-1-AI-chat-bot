@@ -55,89 +55,8 @@ android {
         buildConfigField("String", "PROJECT_ROOT", "\"$projectRoot\"")
     }
 
-    signingConfigs {
-        val keystoreFile = rootProject.file("keystore.jks")
-        val keystorePassword = System.getenv("SIGNING_STORE_PASSWORD") 
-            ?: localProperties.getProperty("SIGNING_STORE_PASSWORD") ?: ""
-        val keyAlias = System.getenv("SIGNING_KEY_ALIAS") 
-            ?: localProperties.getProperty("SIGNING_KEY_ALIAS") ?: "release"
-        val keyPassword = System.getenv("SIGNING_KEY_PASSWORD") 
-            ?: localProperties.getProperty("SIGNING_KEY_PASSWORD") ?: ""
-        
-        if (keystoreFile.exists() && keystorePassword.isNotEmpty()) {
-            try {
-                // Проверяем валидность keystore перед использованием
-                val process = ProcessBuilder(
-                    "keytool", "-list", "-keystore", keystoreFile.absolutePath,
-                    "-storepass", keystorePassword, "-alias", keyAlias
-                ).redirectErrorStream(true).start()
-                
-                val output = process.inputStream.bufferedReader().readText()
-                val exitCode = process.waitFor()
-                
-                if (exitCode == 0) {
-                    // Дополнительная проверка - пытаемся прочитать ключ
-                    val keyProcess = ProcessBuilder(
-                        "keytool", "-list", "-v", "-keystore", keystoreFile.absolutePath,
-                        "-storepass", keystorePassword, "-alias", keyAlias
-                    ).redirectErrorStream(true).start()
-                    
-                    val keyOutput = keyProcess.inputStream.bufferedReader().readText()
-                    val keyExitCode = keyProcess.waitFor()
-                    
-                    if (keyExitCode == 0 && !keyOutput.contains("Given final block not properly padded")) {
-                        create("release") {
-                            storeFile = keystoreFile
-                            storePassword = keystorePassword
-                            this.keyAlias = keyAlias
-                            this.keyPassword = keyPassword
-                        }
-                        println("✅ Keystore validated successfully")
-                    } else {
-                        println("⚠️  Warning: Keystore key validation failed (exit code: $keyExitCode)")
-                        println("⚠️  Error: ${keyOutput.take(200)}")
-                        println("⚠️  Signing will be skipped - keystore appears to be corrupted")
-                        // Удаляем поврежденный keystore, чтобы Gradle не пытался его использовать
-                        try {
-                            keystoreFile.delete()
-                            println("⚠️  Removed invalid keystore file")
-                        } catch (e: Exception) {
-                            println("⚠️  Could not remove keystore file: ${e.message}")
-                        }
-                    }
-                } else {
-                    println("⚠️  Warning: Keystore validation failed (exit code: $exitCode)")
-                    println("⚠️  Error output: ${output.take(200)}")
-                    println("⚠️  Signing will be skipped")
-                    // Удаляем поврежденный keystore
-                    try {
-                        keystoreFile.delete()
-                        println("⚠️  Removed invalid keystore file")
-                    } catch (e: Exception) {
-                        println("⚠️  Could not remove keystore file: ${e.message}")
-                    }
-                }
-            } catch (e: Exception) {
-                println("⚠️  Warning: Cannot validate keystore (${e.message}), signing will be skipped")
-                // Удаляем поврежденный keystore
-                try {
-                    if (keystoreFile.exists()) {
-                        keystoreFile.delete()
-                        println("⚠️  Removed invalid keystore file")
-                    }
-                } catch (deleteException: Exception) {
-                    println("⚠️  Could not remove keystore file: ${deleteException.message}")
-                }
-            }
-        }
-    }
-
     buildTypes {
         release {
-            val releaseSigningConfig = signingConfigs.findByName("release")
-            if (releaseSigningConfig != null) {
-                signingConfig = releaseSigningConfig
-            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

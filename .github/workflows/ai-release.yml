@@ -47,172 +47,6 @@ jobs:
         with:
           cache-read-only: false
       
-      - name: Decode Keystore
-        id: keystore
-        continue-on-error: true
-        run: |
-          KEYSTORE_B64="${{ secrets.KEYSTORE_BASE64 }}"
-          if [ -z "$KEYSTORE_B64" ] || [ "$KEYSTORE_B64" = "" ]; then
-            echo "⚠️  KEYSTORE_BASE64 secret not set, signing will be skipped"
-            echo "keystore_available=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          echo "Starting keystore decoding..."
-          echo "Base64 length: ${#KEYSTORE_B64} characters"
-          
-          # Убираем ВСЕ whitespace символы из base64 строки (более агрессивно)
-          KEYSTORE_B64_CLEAN=$(echo -n "$KEYSTORE_B64" | tr -d '\n\r\t ' | sed 's/[[:space:]]//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -o '[A-Za-z0-9+/=]*')
-          
-          echo "Cleaned base64 length: ${#KEYSTORE_B64_CLEAN} characters"
-          
-          # Проверяем, что base64 не пустой после очистки
-          if [ -z "$KEYSTORE_B64_CLEAN" ] || [ "$KEYSTORE_B64_CLEAN" = "" ]; then
-            echo "❌ Error: Base64 string is empty after cleaning"
-            echo "keystore_available=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-          
-          # Используем Python для более надежного декодирования base64
-          # Сохраняем base64 во временный файл и читаем оттуда
-          echo -n "$KEYSTORE_B64_CLEAN" > /tmp/keystore_b64_input.txt
-          
-          python3 << 'PYTHON_EOF'
-          import base64
-          import sys
-          import re
-          
-          try:
-              # Читаем base64 из файла
-              with open('/tmp/keystore_b64_input.txt', 'r') as f:
-                  b64_str = f.read().strip()
-              
-              if not b64_str:
-                  print("❌ Error: Base64 string is empty")
-                  sys.exit(1)
-              
-              # Убираем все whitespace и не-base64 символы
-              b64_str = re.sub(r'[^A-Za-z0-9+/=]', '', b64_str)
-              
-              if not b64_str:
-                  print("❌ Error: Base64 string contains no valid characters")
-                  sys.exit(1)
-              
-              # Добавляем padding если нужно (base64 должен быть кратен 4)
-              missing_padding = len(b64_str) % 4
-              if missing_padding:
-                  padding_needed = 4 - missing_padding
-                  b64_str += '=' * padding_needed
-                  print(f"Added {padding_needed} padding characters")
-              
-              print(f"Base64 length after cleaning: {len(b64_str)}")
-              
-              # Декодируем
-              try:
-                  keystore_bytes = base64.b64decode(b64_str, validate=True)
-              except Exception as decode_error:
-                  print(f"❌ Error: Failed to decode base64: {decode_error}")
-                  print(f"Base64 length: {len(b64_str)}")
-                  print(f"First 100 chars: {b64_str[:100]}...")
-                  print(f"Last 100 chars: ...{b64_str[-100:]}")
-                  sys.exit(1)
-              
-              # Записываем в файл
-              with open('keystore.jks', 'wb') as f:
-                  f.write(keystore_bytes)
-              
-              print(f"✅ Keystore decoded successfully (size: {len(keystore_bytes)} bytes)")
-              sys.exit(0)
-          except Exception as e:
-              print(f"❌ Error decoding base64: {e}")
-              import traceback
-              traceback.print_exc()
-              sys.exit(1)
-          finally:
-              # Удаляем временный файл
-              import os
-              try:
-                  os.remove('/tmp/keystore_b64_input.txt')
-              except:
-                  pass
-          PYTHON_EOF
-          
-          DECODE_EXIT_CODE=$?
-          
-          if [ $DECODE_EXIT_CODE -ne 0 ]; then
-            echo "❌ Error: Failed to decode base64 using Python"
-            echo "keystore_available=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-          
-          # Проверяем, что файл создан
-          if [ ! -f keystore.jks ]; then
-            echo "❌ Error: keystore.jks file was not created"
-            echo "keystore_available=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-          
-          # Проверяем размер файла
-          KEYSTORE_SIZE=$(stat -f%z keystore.jks 2>/dev/null || stat -c%s keystore.jks 2>/dev/null || echo "0")
-          if [ "$KEYSTORE_SIZE" -eq 0 ]; then
-            echo "❌ Error: keystore.jks file is empty (0 bytes)"
-            echo "keystore_available=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-          
-          echo "✅ Keystore file created (size: $KEYSTORE_SIZE bytes)"
-          
-          # Проверяем валидность keystore с паролем
-          STORE_PASS="${{ secrets.SIGNING_STORE_PASSWORD }}"
-          KEY_ALIAS="${{ secrets.SIGNING_KEY_ALIAS }}"
-          
-          if [ -n "$STORE_PASS" ] && [ -n "$KEY_ALIAS" ]; then
-            echo "Validating keystore with provided password..."
-            
-            # Сначала проверяем, можем ли мы открыть keystore
-            KEYTOOL_LIST_OUTPUT=$(keytool -list -keystore keystore.jks -storepass "$STORE_PASS" 2>&1)
-            KEYTOOL_LIST_EXIT=$?
-            
-            if [ $KEYTOOL_LIST_EXIT -eq 0 ]; then
-              echo "✅ Keystore can be opened with provided password"
-              
-              # Проверяем конкретный алиас
-              VALIDATION_OUTPUT=$(keytool -list -v -keystore keystore.jks -storepass "$STORE_PASS" -alias "$KEY_ALIAS" 2>&1)
-              VALIDATION_EXIT=$?
-              
-              if [ $VALIDATION_EXIT -eq 0 ]; then
-                echo "✅ Keystore is valid and password is correct"
-                echo "✅ Key alias '$KEY_ALIAS' found in keystore"
-                echo "keystore_available=true" >> $GITHUB_OUTPUT
-              else
-                echo "⚠️  Warning: Key alias '$KEY_ALIAS' validation failed (exit code: $VALIDATION_EXIT)"
-                echo "But keystore can be opened. Listing all available aliases:"
-                echo "$KEYTOOL_LIST_OUTPUT" | grep -E "^[a-zA-Z]" || echo "  (no aliases found in output)"
-                echo ""
-                echo "⚠️  Continuing with keystore, but signing might fail if alias is wrong"
-                echo "keystore_available=true" >> $GITHUB_OUTPUT
-              fi
-            else
-              echo "⚠️  Warning: Cannot open keystore with provided password (exit code: $KEYTOOL_LIST_EXIT)"
-              echo "This might mean:"
-              echo "  1. Wrong SIGNING_STORE_PASSWORD"
-              echo "  2. Corrupted keystore file (possibly due to incorrect base64 encoding)"
-              echo ""
-              echo "Error output:"
-              echo "$KEYTOOL_LIST_OUTPUT" | head -5
-              echo ""
-              echo "⚠️  Keystore validation failed - removing invalid keystore file"
-              echo "⚠️  Build will continue without signing"
-              rm -f keystore.jks
-              echo "keystore_available=false" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "⚠️  Warning: Cannot validate keystore (missing password or alias)"
-            echo "⚠️  Removing keystore file to prevent signing errors"
-            rm -f keystore.jks
-            echo "keystore_available=false" >> $GITHUB_OUTPUT
-          fi
-      
       - name: Decode Play Store Key
         run: |
           PLAY_STORE_B64="${{ secrets.PLAY_STORE_JSON_BASE64 }}"
@@ -250,25 +84,11 @@ jobs:
       - name: Run AI Release Pipeline
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          SIGNING_STORE_FILE: keystore.jks
-          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
-          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
           PLAY_STORE_B64="${{ secrets.PLAY_STORE_JSON_BASE64 }}"
           SKIP_DEPLOY="${{ github.event.inputs.skip_deploy }}"
           if [ "$SKIP_DEPLOY" == "true" ] || [ -z "$PLAY_STORE_B64" ] || [ "$PLAY_STORE_B64" == "" ]; then
             export DRY_RUN=true
-          fi
-          
-          # Пропускаем signing если keystore недоступен
-          if [ "${{ steps.keystore.outputs.keystore_available }}" != "true" ]; then
-            echo "⚠️  Keystore not available, removing keystore file to prevent signing errors"
-            rm -f keystore.jks
-            echo "⚠️  Build will continue without signing"
-            # Не устанавливаем переменные окружения для signing
-            unset SIGNING_STORE_PASSWORD
-            unset SIGNING_KEY_PASSWORD
           fi
           
           ./gradlew aiRelease \
@@ -279,33 +99,17 @@ jobs:
       
       - name: Build Release APK
         run: |
-          if [ "${{ steps.keystore.outputs.keystore_available }}" = "true" ] && [ -f "keystore.jks" ]; then
-            echo "✅ Keystore is available, building signed APK"
-            export SIGNING_STORE_FILE=keystore.jks
-            export SIGNING_STORE_PASSWORD="${{ secrets.SIGNING_STORE_PASSWORD }}"
-            export SIGNING_KEY_ALIAS="${{ secrets.SIGNING_KEY_ALIAS }}"
-            export SIGNING_KEY_PASSWORD="${{ secrets.SIGNING_KEY_PASSWORD }}"
-            ./gradlew :app:assembleRelease --no-daemon
-            echo "✅ Release APK built and signed"
-          else
-            echo "⚠️  Keystore not available or invalid, building unsigned APK"
-            echo "⚠️  Removing keystore file if it exists to prevent signing errors"
-            rm -f keystore.jks
-            unset SIGNING_STORE_FILE
-            unset SIGNING_STORE_PASSWORD
-            unset SIGNING_KEY_ALIAS
-            unset SIGNING_KEY_PASSWORD
-            ./gradlew :app:assembleRelease --no-daemon
-            echo "⚠️  This APK cannot be published to Play Store (unsigned)"
-          fi
+          echo "Building unsigned release APK"
+          ./gradlew :app:assembleRelease --no-daemon
+          echo "✅ Release APK built (unsigned)"
       
       - name: Find and rename APK
         run: |
-          if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
-            echo "✅ Found signed APK"
-          elif [ -f "app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
-            echo "⚠️  Found unsigned APK, renaming to app-release.apk"
+          if [ -f "app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
+            echo "Found unsigned APK, renaming to app-release.apk"
             cp app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/app-release.apk
+          elif [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
+            echo "✅ Found APK"
           else
             echo "❌ APK not found"
             exit 1
@@ -464,6 +268,5 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          rm -f keystore.jks
           rm -f play-store-key.json
           echo "✅ Cleanup completed"
