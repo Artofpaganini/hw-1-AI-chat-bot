@@ -671,61 +671,61 @@ fun main(args: Array<String>) {
                                                 )
                                             }
                                         }
-                                        "execute_shell_command" -> {
-                                            val command = arguments?.get("command")?.jsonPrimitive?.content
-                                            val workingDir = arguments?.get("working_directory")?.jsonPrimitive?.content ?: projectRoot
+                                    }
+                                }
+                                "execute_shell_command" -> {
+                                    val command = arguments?.get("command")?.jsonPrimitive?.content
+                                    val workingDir = arguments?.get("working_directory")?.jsonPrimitive?.content ?: projectRoot
+                                    
+                                    if (command.isNullOrBlank()) {
+                                        JsonRpcResponse(
+                                            id = request.id,
+                                            error = JsonRpcError(
+                                                code = -32602,
+                                                message = "command parameter is required"
+                                            )
+                                        )
+                                    } else {
+                                        try {
+                                            logger.log(Level.INFO, "Executing shell command: $command in directory: $workingDir")
                                             
-                                            if (command.isNullOrBlank()) {
+                                            val processBuilder = ProcessBuilder("sh", "-c", command)
+                                            processBuilder.directory(File(workingDir))
+                                            processBuilder.redirectErrorStream(true)
+                                            
+                                            val process = processBuilder.start()
+                                            val output = process.inputStream.bufferedReader().readText()
+                                            val exitCode = process.waitFor()
+                                            
+                                            if (exitCode == 0) {
+                                                logger.log(Level.INFO, "Command executed successfully")
                                                 JsonRpcResponse(
                                                     id = request.id,
-                                                    error = JsonRpcError(
-                                                        code = -32602,
-                                                        message = "command parameter is required"
-                                                    )
+                                                    result = buildJsonObject {
+                                                        put("output", output)
+                                                        put("exitCode", exitCode)
+                                                    }
                                                 )
                                             } else {
-                                                try {
-                                                    logger.log(Level.INFO, "Executing shell command: $command in directory: $workingDir")
-                                                    
-                                                    val processBuilder = ProcessBuilder("sh", "-c", command)
-                                                    processBuilder.directory(File(workingDir))
-                                                    processBuilder.redirectErrorStream(true)
-                                                    
-                                                    val process = processBuilder.start()
-                                                    val output = process.inputStream.bufferedReader().readText()
-                                                    val exitCode = process.waitFor()
-                                                    
-                                                    if (exitCode == 0) {
-                                                        logger.log(Level.INFO, "Command executed successfully")
-                                                        JsonRpcResponse(
-                                                            id = request.id,
-                                                            result = buildJsonObject {
-                                                                put("output", output)
-                                                                put("exitCode", exitCode)
-                                                            }
-                                                        )
-                                                    } else {
-                                                        logger.log(Level.WARNING, "Command failed with exit code: $exitCode")
-                                                        JsonRpcResponse(
-                                                            id = request.id,
-                                                            result = buildJsonObject {
-                                                                put("output", output)
-                                                                put("exitCode", exitCode)
-                                                                put("error", "Command failed with exit code $exitCode")
-                                                            }
-                                                        )
+                                                logger.log(Level.WARNING, "Command failed with exit code: $exitCode")
+                                                JsonRpcResponse(
+                                                    id = request.id,
+                                                    result = buildJsonObject {
+                                                        put("output", output)
+                                                        put("exitCode", exitCode)
+                                                        put("error", "Command failed with exit code $exitCode")
                                                     }
-                                                } catch (e: Exception) {
-                                                    logger.log(Level.SEVERE, "Error executing command", e)
-                                                    JsonRpcResponse(
-                                                        id = request.id,
-                                                        error = JsonRpcError(
-                                                            code = -32603,
-                                                            message = "Error executing command: ${e.message}"
-                                                        )
-                                                    )
-                                                }
+                                                )
                                             }
+                                        } catch (e: Exception) {
+                                            logger.log(Level.SEVERE, "Error executing command", e)
+                                            JsonRpcResponse(
+                                                id = request.id,
+                                                error = JsonRpcError(
+                                                    code = -32603,
+                                                    message = "Error executing command: ${e.message}"
+                                                )
+                                            )
                                         }
                                     }
                                 }
