@@ -55,15 +55,39 @@ fi
 
 # Проверяем наличие embedding модели
 echo "🔍 Checking for embedding model..."
-MODEL_NAME="nomic-embed-text"
+EMBEDDING_MODEL="nomic-embed-text"
 
-if ollama list | grep -q "$MODEL_NAME"; then
-    echo "✅ Embedding model '$MODEL_NAME' is already installed"
+if ollama list | grep -q "$EMBEDDING_MODEL"; then
+    echo "✅ Embedding model '$EMBEDDING_MODEL' is already installed"
 else
-    echo "📥 Downloading embedding model '$MODEL_NAME'..."
-    ollama pull "$MODEL_NAME"
+    echo "📥 Downloading embedding model '$EMBEDDING_MODEL'..."
+    ollama pull "$EMBEDDING_MODEL"
     echo "✅ Embedding model installed"
 fi
+
+# Проверяем наличие моделей для чата
+echo ""
+echo "🔍 Checking for chat models..."
+
+# Популярные модели для чата (можно выбрать одну или несколько)
+CHAT_MODELS=(
+    "llama3.2:3b"      # Быстрая и легкая модель (рекомендуется по умолчанию)
+    "phi3:medium"      # Для reranking (уже используется)
+)
+
+for MODEL in "${CHAT_MODELS[@]}"; do
+    if ollama list | grep -q "$MODEL"; then
+        echo "✅ Chat model '$MODEL' is already installed"
+    else
+        echo "📥 Downloading chat model '$MODEL'..."
+        ollama pull "$MODEL"
+        echo "✅ Chat model '$MODEL' installed"
+    fi
+done
+
+echo ""
+echo "📋 Available models:"
+ollama list
 
 echo ""
 echo "🎉 Setup complete!"

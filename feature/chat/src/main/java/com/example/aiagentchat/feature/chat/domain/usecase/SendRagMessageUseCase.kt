@@ -29,7 +29,7 @@ class SendRagMessageUseCase(
 ) {
     companion object {
         private const val TAG = "SendRagMessageUseCase"
-        private const val DEFAULT_CHAT_MODEL = "nomic-embed-text"
+        private const val DEFAULT_CHAT_MODEL = OllamaApi.DEFAULT_CHAT_MODEL
     }
 
     suspend operator fun invoke(

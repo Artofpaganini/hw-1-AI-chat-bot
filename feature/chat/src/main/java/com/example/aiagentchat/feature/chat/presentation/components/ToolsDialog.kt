@@ -26,6 +26,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Button
 import androidx.compose.runtime.Composable
@@ -46,6 +49,9 @@ fun ToolsDialog(
     onDismiss: () -> Unit,
     ollamaEnabled: Boolean = false,
     onOllamaToggle: (Boolean) -> Unit = {},
+    availableOllamaModels: List<String> = emptyList(),
+    selectedOllamaChatModel: String = "llama3.2:3b",
+    onOllamaChatModelSelected: (String) -> Unit = {},
     rerankingEnabled: Boolean = false,
     onRerankingToggle: (Boolean) -> Unit = {},
     githubMcpEnabled: Boolean = false,
@@ -116,6 +122,9 @@ fun ToolsDialog(
                         OllamaItem(
                             enabled = ollamaEnabled,
                             onToggle = onOllamaToggle,
+                            availableOllamaModels = availableOllamaModels,
+                            selectedOllamaChatModel = selectedOllamaChatModel,
+                            onOllamaChatModelSelected = onOllamaChatModelSelected,
                             rerankingEnabled = rerankingEnabled,
                             onRerankingToggle = onRerankingToggle,
                             projectReviewModeEnabled = projectReviewModeEnabled,
@@ -137,6 +146,9 @@ fun ToolsDialog(
 private fun OllamaItem(
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
+    availableOllamaModels: List<String> = emptyList(),
+    selectedOllamaChatModel: String = "llama3.2:3b",
+    onOllamaChatModelSelected: (String) -> Unit = {},
     rerankingEnabled: Boolean = false,
     onRerankingToggle: (Boolean) -> Unit = {},
     projectReviewModeEnabled: Boolean = false,
@@ -225,6 +237,73 @@ private fun OllamaItem(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 4.dp)
                         )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Выбор локальной модели для чата
+                    Column {
+                        Text(
+                            text = "Local Chat Model",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        Text(
+                            text = "Select a local LLM model for chat (when no indexed documents or for regular chat)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        
+                        var expanded by remember { mutableStateOf(false) }
+                        val models = if (availableOllamaModels.isEmpty()) {
+                            listOf(selectedOllamaChatModel)
+                        } else {
+                            availableOllamaModels
+                        }
+                        
+                        @OptIn(ExperimentalMaterial3Api::class)
+                        ExposedDropdownMenuBox(
+                            expanded = expanded,
+                            onExpandedChange = { expanded = !expanded }
+                        ) {
+                            OutlinedTextField(
+                                value = selectedOllamaChatModel,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Model") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
+                                colors = TextFieldDefaults.colors()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = expanded,
+                                onDismissRequest = { expanded = false }
+                            ) {
+                                models.forEach { model ->
+                                    DropdownMenuItem(
+                                        text = { Text(model) },
+                                        onClick = {
+                                            onOllamaChatModelSelected(model)
+                                            expanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        
+                        if (availableOllamaModels.isEmpty()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "No models found. Make sure Ollama is running and models are installed.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 }
                 

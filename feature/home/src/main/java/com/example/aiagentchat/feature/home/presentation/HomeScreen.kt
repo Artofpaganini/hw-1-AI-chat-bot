@@ -137,6 +137,11 @@ fun HomeScreen(
             onOllamaToggle = { enabled ->
                 viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleOllama(enabled))
             },
+            availableOllamaModels = state.availableOllamaModels,
+            selectedOllamaChatModel = state.selectedOllamaChatModel,
+            onOllamaChatModelSelected = { model ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.SelectOllamaChatModel(model))
+            },
             rerankingEnabled = state.rerankingEnabled,
             onRerankingToggle = { enabled ->
                 viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleReranking(enabled))

@@ -25,7 +25,9 @@ data class ChatUiState(
     val githubMcpEnabled: Boolean = false,
     val projectReviewModeEnabled: Boolean = false,
     val projectTeamAssistantEnabled: Boolean = false,
-    val localMcpServerEnabled: Boolean = false
+    val localMcpServerEnabled: Boolean = false,
+    val availableOllamaModels: List<String> = emptyList(),
+    val selectedOllamaChatModel: String = "llama3.2:3b"
 )
 
 sealed interface ChatAction {
@@ -45,6 +47,8 @@ sealed interface ChatAction {
     data class ToggleProjectReviewMode(val enabled: Boolean) : ChatAction
     data class ToggleProjectTeamAssistant(val enabled: Boolean) : ChatAction
     data class ToggleLocalMcpServer(val enabled: Boolean) : ChatAction
+    data class SelectOllamaChatModel(val model: String) : ChatAction
+    data object LoadOllamaModels : ChatAction
     data object ExportJson : ChatAction
     data object DismissJsonExport : ChatAction
 }

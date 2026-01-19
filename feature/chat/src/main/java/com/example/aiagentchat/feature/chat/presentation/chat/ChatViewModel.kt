@@ -123,6 +123,8 @@ class ChatViewModel(
             is ChatAction.ToggleProjectReviewMode -> handleToggleProjectReviewMode(action.enabled)
             is ChatAction.ToggleProjectTeamAssistant -> handleToggleProjectTeamAssistant(action.enabled)
             is ChatAction.ToggleLocalMcpServer -> handleToggleLocalMcpServer(action.enabled)
+            is ChatAction.SelectOllamaChatModel -> handleSelectOllamaChatModel(action.model)
+            is ChatAction.LoadOllamaModels -> loadOllamaModels()
         }
     }
     
@@ -263,16 +265,10 @@ class ChatViewModel(
             // Получаем список всех проиндексированных книг
             val allBooks = vectorDatabaseService.getAllBooksSync()
             
+            // Если нет индексированных книг, используем Ollama для обычного чата (без RAG)
             if (allBooks.isEmpty()) {
-                val errorMsg = "No indexed books found. Please index a book first."
-                android.util.Log.w("ChatViewModel", errorMsg)
-                _uiState.update { state ->
-                    state.copy(
-                        isLoading = false,
-                        error = errorMsg
-                    )
-                }
-                _events.emit(ChatEvent.ShowError(errorMsg))
+                android.util.Log.d("ChatViewModel", "No indexed books found. Using Ollama for regular chat (without RAG)")
+                handleSendMessageWithOllamaChat(currentInput, userMessage)
                 return
             }
             
@@ -398,45 +394,192 @@ class ChatViewModel(
                 }
             }
             
-            val messagesWithContext = listOf(
-                ChatMessageDto(role = "user", content = enhancedPrompt)
+            // Используем Ollama для генерации ответа с RAG контекстом
+            val chatModel = preferencesManager.ollamaChatModel
+            android.util.Log.d("ChatViewModel", "Using Ollama for RAG chat with model: $chatModel")
+            
+            val messages = listOf(
+                com.example.aiagentchat.feature.chat.data.api.OllamaChatMessage(
+                    role = "user",
+                    content = enhancedPrompt
+                )
             )
             
-            sendMessageUseCase(
-                model = _uiState.value.selectedModel,
-                messages = messagesWithContext
+            val request = com.example.aiagentchat.feature.chat.data.api.OllamaChatRequest(
+                model = chatModel,
+                messages = messages,
+                stream = false
             )
-                .onSuccess { aiMessage ->
-                    val finalContent = if (rerankingEnabled) {
-                        aiMessage.content + "\n\n---\nС Ollama и фильтрацией"
-                    } else {
-                        aiMessage.content + "\n\n---\nС Ollama и без фильтрацией"
-                    }
-                    
-                    val finalMessage = aiMessage.copy(content = finalContent)
-                    chatRepository.saveMessage(finalMessage)
-                    handleCheckMessageThreshold(finalMessage)
-                    val updatedMessages = _uiState.value.messages + userMessage + finalMessage
-                    val comparison = compareModelMetricsUseCase(updatedMessages, currentInput)
-                    _uiState.update { state ->
-                        state.copy(
-                            isLoading = false,
-                            metricsComparison = comparison
-                        )
-                    }
+            
+            val response = ollamaApi.generateChat(request)
+            
+            if (!response.isSuccessful) {
+                val errorBody = response.errorBody()?.string() ?: "Unknown error"
+                val errorMsg = "Failed to generate chat response from Ollama: HTTP ${response.code()} - $errorBody"
+                android.util.Log.e("ChatViewModel", errorMsg)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = errorMsg
+                    )
                 }
-                .onFailure { error ->
-                    android.util.Log.e("ChatViewModel", "Error sending message with Ollama context", error)
-                    _uiState.update { state ->
-                        state.copy(
-                            isLoading = false,
-                            error = error.message ?: "Unknown error occurred"
-                        )
-                    }
-                    _events.emit(ChatEvent.ShowError(error.message ?: "Unknown error occurred"))
+                _events.emit(ChatEvent.ShowError(errorMsg))
+                return
+            }
+            
+            val responseBody = response.body()
+            if (responseBody == null || responseBody.message == null) {
+                val errorMsg = "Empty response body from Ollama"
+                android.util.Log.e("ChatViewModel", errorMsg)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = errorMsg
+                    )
                 }
+                _events.emit(ChatEvent.ShowError(errorMsg))
+                return
+            }
+            
+            val content = responseBody.message.content
+            if (content.isBlank()) {
+                val errorMsg = "Empty content in response from Ollama"
+                android.util.Log.e("ChatViewModel", errorMsg)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = errorMsg
+                    )
+                }
+                _events.emit(ChatEvent.ShowError(errorMsg))
+                return
+            }
+            
+            android.util.Log.d("ChatViewModel", "✅ Generated RAG response from Ollama ($chatModel): ${content.length} chars")
+            
+            val finalContent = if (rerankingEnabled) {
+                content + "\n\n---\nС Ollama и фильтрацией (модель: $chatModel)"
+            } else {
+                content + "\n\n---\nС Ollama и без фильтрацией (модель: $chatModel)"
+            }
+            
+            val aiMessage = Message(
+                content = finalContent,
+                isUser = false,
+                model = _uiState.value.selectedModel,
+                metrics = null
+            )
+            
+            chatRepository.saveMessage(aiMessage)
+            handleCheckMessageThreshold(aiMessage)
+            val updatedMessages = _uiState.value.messages + userMessage + aiMessage
+            val comparison = compareModelMetricsUseCase(updatedMessages, currentInput)
+            _uiState.update { state ->
+                state.copy(
+                    isLoading = false,
+                    metricsComparison = comparison
+                )
+            }
         } catch (e: Exception) {
             android.util.Log.e("ChatViewModel", "Error in handleSendMessageWithOllama", e)
+            _uiState.update { state ->
+                state.copy(
+                    isLoading = false,
+                    error = e.message ?: "Unknown error occurred"
+                )
+            }
+            _events.emit(ChatEvent.ShowError(e.message ?: "Unknown error occurred"))
+        }
+    }
+
+    private suspend fun handleSendMessageWithOllamaChat(currentInput: String, userMessage: Message) {
+        try {
+            val chatModel = preferencesManager.ollamaChatModel
+            android.util.Log.d("ChatViewModel", "Using Ollama for regular chat with model: $chatModel")
+            
+            // Собираем историю сообщений для контекста
+            val chatHistory = _uiState.value.messages.takeLast(10) // Берем последние 10 сообщений для контекста
+            val messages = chatHistory.map { msg ->
+                com.example.aiagentchat.feature.chat.data.api.OllamaChatMessage(
+                    role = if (msg.isUser) "user" else "assistant",
+                    content = msg.content
+                )
+            } + com.example.aiagentchat.feature.chat.data.api.OllamaChatMessage(
+                role = "user",
+                content = currentInput
+            )
+            
+            val request = com.example.aiagentchat.feature.chat.data.api.OllamaChatRequest(
+                model = chatModel,
+                messages = messages,
+                stream = false
+            )
+            
+            val response = ollamaApi.generateChat(request)
+            
+            if (!response.isSuccessful) {
+                val errorBody = response.errorBody()?.string() ?: "Unknown error"
+                val errorMsg = "Failed to generate chat response from Ollama: HTTP ${response.code()} - $errorBody"
+                android.util.Log.e("ChatViewModel", errorMsg)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = errorMsg
+                    )
+                }
+                _events.emit(ChatEvent.ShowError(errorMsg))
+                return
+            }
+            
+            val responseBody = response.body()
+            if (responseBody == null || responseBody.message == null) {
+                val errorMsg = "Empty response body from Ollama"
+                android.util.Log.e("ChatViewModel", errorMsg)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = errorMsg
+                    )
+                }
+                _events.emit(ChatEvent.ShowError(errorMsg))
+                return
+            }
+            
+            val content = responseBody.message.content
+            if (content.isBlank()) {
+                val errorMsg = "Empty content in response from Ollama"
+                android.util.Log.e("ChatViewModel", errorMsg)
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        error = errorMsg
+                    )
+                }
+                _events.emit(ChatEvent.ShowError(errorMsg))
+                return
+            }
+            
+            android.util.Log.d("ChatViewModel", "✅ Generated response from Ollama ($chatModel): ${content.length} chars")
+            
+            val aiMessage = Message(
+                content = content + "\n\n---\nС Ollama (локальная модель: $chatModel)",
+                isUser = false,
+                model = _uiState.value.selectedModel, // Используем выбранную модель для метрик
+                metrics = null // Метрики можно добавить позже
+            )
+            
+            chatRepository.saveMessage(aiMessage)
+            handleCheckMessageThreshold(aiMessage)
+            val updatedMessages = _uiState.value.messages + userMessage + aiMessage
+            val comparison = compareModelMetricsUseCase(updatedMessages, currentInput)
+            _uiState.update { state ->
+                state.copy(
+                    isLoading = false,
+                    metricsComparison = comparison
+                )
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "Error in handleSendMessageWithOllamaChat", e)
             _uiState.update { state ->
                 state.copy(
                     isLoading = false,
@@ -588,12 +731,46 @@ class ChatViewModel(
     
     private fun loadOllamaState() {
         val enabled = preferencesManager.ollamaEnabled
+        val selectedModel = preferencesManager.ollamaChatModel
         _uiState.update { 
-            it.copy(ollamaEnabled = enabled) 
+            it.copy(
+                ollamaEnabled = enabled,
+                selectedOllamaChatModel = selectedModel
+            ) 
         }
         if (enabled) {
             checkOllamaConnection()
+            loadOllamaModels()
         }
+    }
+    
+    private fun loadOllamaModels() {
+        viewModelScope.launch {
+            try {
+                android.util.Log.d("ChatViewModel", "Loading available Ollama models...")
+                val response = ollamaApi.getTags()
+                
+                if (response.isSuccessful) {
+                    val models = response.body()?.models?.map { it.name } ?: emptyList()
+                    android.util.Log.d("ChatViewModel", "✅ Loaded ${models.size} Ollama models: $models")
+                    _uiState.update { 
+                        it.copy(availableOllamaModels = models) 
+                    }
+                } else {
+                    android.util.Log.w("ChatViewModel", "Failed to load Ollama models: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "Error loading Ollama models", e)
+            }
+        }
+    }
+    
+    private fun handleSelectOllamaChatModel(model: String) {
+        preferencesManager.ollamaChatModel = model
+        _uiState.update { 
+            it.copy(selectedOllamaChatModel = model) 
+        }
+        android.util.Log.d("ChatViewModel", "Selected Ollama chat model: $model")
     }
     
     private fun handleToggleOllama(enabled: Boolean) {
@@ -604,6 +781,7 @@ class ChatViewModel(
             android.util.Log.i("ChatViewModel", "🚀 Ollama enabled - checking server connection...")
             android.util.Log.i("ChatViewModel", "📝 Note: Run './setup-ollama.sh' on your Mac to start Ollama server")
             checkOllamaConnection()
+            loadOllamaModels()
         }
     }
     

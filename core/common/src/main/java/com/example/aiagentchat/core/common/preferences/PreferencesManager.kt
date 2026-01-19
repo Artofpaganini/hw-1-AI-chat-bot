@@ -19,6 +19,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_LOCAL_MCP_SERVER_ENABLED = "local_mcp_server_enabled"
         private const val KEY_GITHUB_MCP_ENABLED = "github_mcp_enabled"
         private const val KEY_PROJECT_ROOT_PATH = "project_root_path"
+        private const val KEY_OLLAMA_CHAT_MODEL = "ollama_chat_model"
     }
 
     var lastUserQuery: String?
@@ -28,6 +29,10 @@ class PreferencesManager(context: Context) {
     var ollamaEnabled: Boolean
         get() = prefs.getBoolean(KEY_OLLAMA_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_OLLAMA_ENABLED, value).apply()
+    
+    var ollamaChatModel: String
+        get() = prefs.getString(KEY_OLLAMA_CHAT_MODEL, "llama3.2:3b") ?: "llama3.2:3b"
+        set(value) = prefs.edit().putString(KEY_OLLAMA_CHAT_MODEL, value).apply()
     
     var rerankingEnabled: Boolean
         get() = prefs.getBoolean(KEY_RERANKING_ENABLED, false)

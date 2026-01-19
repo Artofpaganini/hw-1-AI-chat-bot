@@ -44,9 +44,15 @@ interface OllamaApi {
 
     companion object {
         const val DEFAULT_BASE_URL = "http://10.0.2.2:11434/"
-        const val DEFAULT_MODEL = "nomic-embed-text"
+        const val DEFAULT_MODEL = "nomic-embed-text" // Embedding модель
         const val DEFAULT_RERANKING_MODEL = "phi3:medium" // Модель для reranking
-        const val DEFAULT_CHAT_MODEL = "nomic-embed-text" // Модель для генерации ответов
+        const val DEFAULT_CHAT_MODEL = "llama3.2:3b" // Модель для генерации ответов (локальная LLM)
+        // Популярные локальные модели для чата:
+        // - llama3.2:3b, llama3.2:1b (быстрые, легкие)
+        // - llama3:8b, llama3:70b (более мощные)
+        // - mistral:7b, mistral:latest
+        // - phi3:mini, phi3:medium, phi3:14b
+        // - qwen2.5:7b, qwen2.5:14b
         private const val TAG = "OllamaApi"
 
         fun create(baseUrl: String = DEFAULT_BASE_URL): OllamaApi {
