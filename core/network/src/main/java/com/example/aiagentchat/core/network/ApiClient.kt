@@ -59,27 +59,47 @@ object ApiClient {
     // DNS для локальных адресов - прямое разрешение IP без DNS запросов
     // Важно: этот DNS используется ТОЛЬКО для локальных адресов (10.0.2.2, localhost, 127.0.0.1)
     // и НЕ влияет на интернет-запросы, которые используют internetOkHttpClient с обычным DNS
+    // OkHttp автоматически определяет, является ли hostname IP адресом, и передает его в DNS resolver
+    // Наш кастомный DNS resolver обрабатывает IP адреса напрямую без DNS запросов
     private val localDns = object : Dns {
         override fun lookup(hostname: String): List<InetAddress> {
             return try {
+                Log.d(TAG, "localDns.lookup() called for hostname: '$hostname'")
+                
+                // Проверяем, является ли hostname IP адресом (IPv4)
+                val isIpAddress = hostname.matches(Regex("^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$"))
+                
                 when {
-                    hostname == "10.0.2.2" -> {
+                    hostname == "10.0.2.2" || (isIpAddress && hostname == "10.0.2.2") -> {
                         Log.d(TAG, "Direct IP resolution for 10.0.2.2 (emulator localhost) - no DNS query needed")
-                        listOf(InetAddress.getByName("10.0.2.2"))
+                        val address = InetAddress.getByAddress("10.0.2.2", byteArrayOf(10, 0, 2, 2))
+                        Log.d(TAG, "✅ Resolved 10.0.2.2 to: ${address.hostAddress}")
+                        listOf(address)
                     }
-                    hostname == "localhost" || hostname == "127.0.0.1" -> {
+                    hostname == "localhost" || hostname == "127.0.0.1" || (isIpAddress && hostname == "127.0.0.1") -> {
                         Log.d(TAG, "Direct IP resolution for localhost - no DNS query needed")
-                        listOf(InetAddress.getByName("127.0.0.1"))
+                        val address = InetAddress.getByAddress("127.0.0.1", byteArrayOf(127, 0, 0, 1))
+                        Log.d(TAG, "✅ Resolved localhost to: ${address.hostAddress}")
+                        listOf(address)
+                    }
+                    isIpAddress -> {
+                        // Для других IP адресов используем прямое разрешение
+                        Log.d(TAG, "Direct IP resolution for IP address: $hostname")
+                        val address = InetAddress.getByName(hostname)
+                        Log.d(TAG, "✅ Resolved $hostname to: ${address.hostAddress}")
+                        listOf(address)
                     }
                     else -> {
                         // Для других адресов используем системный DNS
                         // Это не должно происходить, так как localDns используется только для локальных адресов
-                        Log.w(TAG, "Unexpected hostname in localDns: $hostname, using SystemDns")
+                        Log.w(TAG, "Unexpected hostname in localDns: '$hostname', using SystemDns")
                         SystemDns.lookup(hostname)
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to resolve local hostname: $hostname", e)
+                Log.e(TAG, "❌ Failed to resolve local hostname: '$hostname'", e)
+                Log.e(TAG, "Error type: ${e.javaClass.simpleName}, message: ${e.message}")
+                Log.e(TAG, "Stack trace: ${e.stackTrace.take(5).joinToString("\n")}")
                 throw e
             }
         }
@@ -88,10 +108,10 @@ object ApiClient {
     private val localOkHttpClient = OkHttpClient.Builder()
         .addInterceptor(loggingInterceptor)
         .dns(localDns) // Используем специальный DNS ТОЛЬКО для локальных адресов
-        .connectTimeout(60, TimeUnit.SECONDS) // Увеличено для Ollama (может быть медленным)
+        .connectTimeout(30, TimeUnit.SECONDS) // Уменьшено для быстрого обнаружения недоступности сервера
         .readTimeout(360, TimeUnit.SECONDS) // 6 минут для reranking (может обрабатывать до 20 кандидатов, каждый требует запрос к LLM)
         .writeTimeout(60, TimeUnit.SECONDS)
-        .retryOnConnectionFailure(true)
+        .retryOnConnectionFailure(false) // Отключаем автоматические повторы для быстрого обнаружения ошибок
         .build()
 
     fun createRetrofit(baseUrl: String): Retrofit {
@@ -101,9 +121,10 @@ object ApiClient {
                      baseUrl.contains("127.0.0.1")
         
         val client = if (isLocal) {
-            Log.d(TAG, "Using local OkHttp client (with local DNS resolver) for: $baseUrl")
-            Log.d(TAG, "Local addresses (10.0.2.2, localhost, 127.0.0.1) will be resolved directly")
-            Log.d(TAG, "⚠️ This client is ONLY for local addresses and does NOT affect internet requests")
+            Log.d(TAG, "✅ Using local OkHttp client (with local DNS resolver) for: $baseUrl")
+            Log.d(TAG, "🌐 Local addresses (10.0.2.2, localhost, 127.0.0.1) will be resolved directly")
+            Log.d(TAG, "📡 This client is ONLY for local addresses and does NOT affect internet requests")
+            Log.d(TAG, "🔧 DNS resolver will use direct IP resolution (no DNS queries needed)")
             localOkHttpClient
         } else {
             Log.d(TAG, "Using internet OkHttp client (with standard DNS resolver) for: $baseUrl")
@@ -111,11 +132,14 @@ object ApiClient {
             internetOkHttpClient
         }
         
-        return Retrofit.Builder()
+        val retrofit = Retrofit.Builder()
             .baseUrl(baseUrl)
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
+        
+        Log.d(TAG, "✅ Retrofit instance created successfully for: $baseUrl")
+        return retrofit
     }
 }
 

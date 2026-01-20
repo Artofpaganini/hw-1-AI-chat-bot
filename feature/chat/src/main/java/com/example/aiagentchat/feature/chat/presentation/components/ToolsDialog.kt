@@ -299,7 +299,13 @@ private fun OllamaItem(
                         if (availableOllamaModels.isEmpty()) {
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "No models found. Make sure Ollama is running and models are installed.",
+                                text = "Models list not loaded. Using default model: $selectedOllamaChatModel",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Make sure Ollama is running on your Mac: ollama serve",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error
                             )

@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 
 class ChatViewModel(
@@ -249,12 +250,20 @@ class ChatViewModel(
                 return@launch
             }
             
-            // Если включен Project Review Mode + Ollama Vector Search, используем RAG с файлами проекта
-            if (projectReviewModeEnabled && ollamaEnabled) {
-                handleSendMessageWithProjectReviewMode(currentInput, userMessage)
-            } else if (ollamaEnabled) {
-                handleSendMessageWithOllama(currentInput, userMessage)
+            // Если включен Ollama, ВСЕГДА используем только локальную модель (оффлайн режим)
+            // НЕ используем облачные API, даже если они доступны
+            if (ollamaEnabled) {
+                android.util.Log.i("ChatViewModel", "🔄 Ollama enabled - using OFFLINE mode (local LLM only)")
+                android.util.Log.i("ChatViewModel", "⚠️ Cloud APIs will NOT be used when Ollama is enabled")
+                
+                // Если включен Project Review Mode + Ollama Vector Search, используем RAG с файлами проекта
+                if (projectReviewModeEnabled) {
+                    handleSendMessageWithProjectReviewMode(currentInput, userMessage)
+                } else {
+                    handleSendMessageWithOllama(currentInput, userMessage)
+                }
             } else {
+                android.util.Log.d("ChatViewModel", "Ollama disabled - using cloud APIs")
                 handleSendMessageWithoutOllama(currentInput, userMessage)
             }
         }
@@ -262,12 +271,15 @@ class ChatViewModel(
 
     private suspend fun handleSendMessageWithOllama(currentInput: String, userMessage: Message) {
         try {
+            android.util.Log.i("ChatViewModel", "🌐 OFFLINE MODE: Processing message with Ollama (local LLM only)")
+            
             // Получаем список всех проиндексированных книг
             val allBooks = vectorDatabaseService.getAllBooksSync()
             
             // Если нет индексированных книг, используем Ollama для обычного чата (без RAG)
             if (allBooks.isEmpty()) {
-                android.util.Log.d("ChatViewModel", "No indexed books found. Using Ollama for regular chat (without RAG)")
+                android.util.Log.i("ChatViewModel", "📚 No indexed books found. Using Ollama for regular chat (without RAG)")
+                android.util.Log.i("ChatViewModel", "📡 All requests go to local Ollama server (NO internet required)")
                 handleSendMessageWithOllamaChat(currentInput, userMessage)
                 return
             }
@@ -396,7 +408,8 @@ class ChatViewModel(
             
             // Используем Ollama для генерации ответа с RAG контекстом
             val chatModel = preferencesManager.ollamaChatModel
-            android.util.Log.d("ChatViewModel", "Using Ollama for RAG chat with model: $chatModel")
+            android.util.Log.i("ChatViewModel", "🌐 OFFLINE MODE: Using Ollama for RAG chat with model: $chatModel")
+            android.util.Log.i("ChatViewModel", "📡 All requests go to local Ollama server at http://10.0.2.2:11434 (NO internet required)")
             
             val messages = listOf(
                 com.example.aiagentchat.feature.chat.data.api.OllamaChatMessage(
@@ -415,15 +428,16 @@ class ChatViewModel(
             
             if (!response.isSuccessful) {
                 val errorBody = response.errorBody()?.string() ?: "Unknown error"
-                val errorMsg = "Failed to generate chat response from Ollama: HTTP ${response.code()} - $errorBody"
+                val errorMsg = "Failed to generate RAG chat response from Ollama: HTTP ${response.code()} - $errorBody"
                 android.util.Log.e("ChatViewModel", errorMsg)
+                android.util.Log.e("ChatViewModel", "🌐 OFFLINE MODE: Error occurred (this is a local error, NOT internet-related)")
                 _uiState.update { state ->
                     state.copy(
                         isLoading = false,
-                        error = errorMsg
+                        error = "Ошибка локального Ollama сервера при RAG (оффлайн режим). Проверьте, что Ollama запущен."
                     )
                 }
-                _events.emit(ChatEvent.ShowError(errorMsg))
+                _events.emit(ChatEvent.ShowError("Ошибка локального Ollama сервера. Проверьте, что Ollama запущен: ollama serve"))
                 return
             }
             
@@ -431,13 +445,14 @@ class ChatViewModel(
             if (responseBody == null || responseBody.message == null) {
                 val errorMsg = "Empty response body from Ollama"
                 android.util.Log.e("ChatViewModel", errorMsg)
+                android.util.Log.e("ChatViewModel", "🌐 OFFLINE MODE: Empty response (local error)")
                 _uiState.update { state ->
                     state.copy(
                         isLoading = false,
-                        error = errorMsg
+                        error = "Пустой ответ от локального Ollama сервера"
                     )
                 }
-                _events.emit(ChatEvent.ShowError(errorMsg))
+                _events.emit(ChatEvent.ShowError("Пустой ответ от локального Ollama сервера"))
                 return
             }
             
@@ -445,22 +460,25 @@ class ChatViewModel(
             if (content.isBlank()) {
                 val errorMsg = "Empty content in response from Ollama"
                 android.util.Log.e("ChatViewModel", errorMsg)
+                android.util.Log.e("ChatViewModel", "🌐 OFFLINE MODE: Empty content (local error)")
                 _uiState.update { state ->
                     state.copy(
                         isLoading = false,
-                        error = errorMsg
+                        error = "Пустое содержимое в ответе от локального Ollama сервера"
                     )
                 }
-                _events.emit(ChatEvent.ShowError(errorMsg))
+                _events.emit(ChatEvent.ShowError("Пустое содержимое в ответе от локального Ollama сервера"))
                 return
             }
             
             android.util.Log.d("ChatViewModel", "✅ Generated RAG response from Ollama ($chatModel): ${content.length} chars")
+            android.util.Log.i("ChatViewModel", "🌐 OFFLINE MODE: RAG response generated successfully (NO internet was used)")
+            android.util.Log.i("ChatViewModel", "🌐 OFFLINE MODE: RAG response generated successfully (NO internet was used)")
             
             val finalContent = if (rerankingEnabled) {
-                content + "\n\n---\nС Ollama и фильтрацией (модель: $chatModel)"
+                content + "\n\n---\n🌐 OFFLINE: С Ollama и фильтрацией (модель: $chatModel)"
             } else {
-                content + "\n\n---\nС Ollama и без фильтрацией (модель: $chatModel)"
+                content + "\n\n---\n🌐 OFFLINE: С Ollama и без фильтрацией (модель: $chatModel)"
             }
             
             val aiMessage = Message(
@@ -480,22 +498,34 @@ class ChatViewModel(
                     metricsComparison = comparison
                 )
             }
-        } catch (e: Exception) {
-            android.util.Log.e("ChatViewModel", "Error in handleSendMessageWithOllama", e)
+        } catch (e: java.net.ConnectException) {
+            android.util.Log.e("ChatViewModel", "❌ Connection error in OFFLINE mode (RAG)", e)
+            android.util.Log.e("ChatViewModel", "🌐 This is a LOCAL connection error (NOT internet-related)")
             _uiState.update { state ->
                 state.copy(
                     isLoading = false,
-                    error = e.message ?: "Unknown error occurred"
+                    error = "Не удалось подключиться к локальному Ollama серверу при RAG. Убедитесь, что Ollama запущен."
                 )
             }
-            _events.emit(ChatEvent.ShowError(e.message ?: "Unknown error occurred"))
+            _events.emit(ChatEvent.ShowError("Не удалось подключиться к локальному Ollama серверу. Запустите: ollama serve"))
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "Error in handleSendMessageWithOllama (OFFLINE mode)", e)
+            android.util.Log.e("ChatViewModel", "🌐 This is a LOCAL error (NOT internet-related)")
+            _uiState.update { state ->
+                state.copy(
+                    isLoading = false,
+                    error = "Ошибка локального Ollama сервера: ${e.message ?: "Unknown error"}"
+                )
+            }
+            _events.emit(ChatEvent.ShowError("Ошибка локального Ollama сервера: ${e.message ?: "Unknown error"}"))
         }
     }
 
     private suspend fun handleSendMessageWithOllamaChat(currentInput: String, userMessage: Message) {
         try {
             val chatModel = preferencesManager.ollamaChatModel
-            android.util.Log.d("ChatViewModel", "Using Ollama for regular chat with model: $chatModel")
+            android.util.Log.i("ChatViewModel", "🌐 OFFLINE MODE: Using Ollama for regular chat with model: $chatModel")
+            android.util.Log.i("ChatViewModel", "📡 All requests go to local Ollama server at http://10.0.2.2:11434 (NO internet required)")
             
             // Собираем историю сообщений для контекста
             val chatHistory = _uiState.value.messages.takeLast(10) // Берем последние 10 сообщений для контекста
@@ -560,9 +590,10 @@ class ChatViewModel(
             }
             
             android.util.Log.d("ChatViewModel", "✅ Generated response from Ollama ($chatModel): ${content.length} chars")
+            android.util.Log.i("ChatViewModel", "🌐 OFFLINE MODE: Response generated successfully (NO internet was used)")
             
             val aiMessage = Message(
-                content = content + "\n\n---\nС Ollama (локальная модель: $chatModel)",
+                content = content + "\n\n---\n🌐 OFFLINE: С Ollama (локальная модель: $chatModel)",
                 isUser = false,
                 model = _uiState.value.selectedModel, // Используем выбранную модель для метрик
                 metrics = null // Метрики можно добавить позже
@@ -578,15 +609,37 @@ class ChatViewModel(
                     metricsComparison = comparison
                 )
             }
-        } catch (e: Exception) {
-            android.util.Log.e("ChatViewModel", "Error in handleSendMessageWithOllamaChat", e)
+        } catch (e: java.net.ConnectException) {
+            android.util.Log.e("ChatViewModel", "❌ Connection error in OFFLINE mode", e)
+            android.util.Log.e("ChatViewModel", "🌐 This is a LOCAL connection error (NOT internet-related)")
+            android.util.Log.e("ChatViewModel", "💡 Make sure Ollama is running: ollama serve")
             _uiState.update { state ->
                 state.copy(
                     isLoading = false,
-                    error = e.message ?: "Unknown error occurred"
+                    error = "Не удалось подключиться к локальному Ollama серверу. Убедитесь, что Ollama запущен на Mac (оффлайн режим)."
                 )
             }
-            _events.emit(ChatEvent.ShowError(e.message ?: "Unknown error occurred"))
+            _events.emit(ChatEvent.ShowError("Не удалось подключиться к локальному Ollama серверу. Запустите: ollama serve"))
+        } catch (e: java.net.UnknownHostException) {
+            android.util.Log.e("ChatViewModel", "❌ Unknown host error in OFFLINE mode", e)
+            android.util.Log.e("ChatViewModel", "🌐 This should NOT happen in offline mode (10.0.2.2 should resolve directly)")
+            _uiState.update { state ->
+                state.copy(
+                    isLoading = false,
+                    error = "Ошибка разрешения адреса Ollama сервера. Проверьте настройки эмулятора."
+                )
+            }
+            _events.emit(ChatEvent.ShowError("Ошибка разрешения адреса Ollama сервера. Проверьте настройки эмулятора."))
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "Error in handleSendMessageWithOllamaChat (OFFLINE mode)", e)
+            android.util.Log.e("ChatViewModel", "🌐 This is a LOCAL error (NOT internet-related)")
+            _uiState.update { state ->
+                state.copy(
+                    isLoading = false,
+                    error = "Ошибка локального Ollama сервера: ${e.message ?: "Unknown error"}"
+                )
+            }
+            _events.emit(ChatEvent.ShowError("Ошибка локального Ollama сервера: ${e.message ?: "Unknown error"}"))
         }
     }
 
@@ -739,8 +792,15 @@ class ChatViewModel(
             ) 
         }
         if (enabled) {
+            android.util.Log.i("ChatViewModel", "🔄 Loading Ollama state - OFFLINE MODE")
+            // Сначала проверяем подключение, затем загружаем модели
             checkOllamaConnection()
-            loadOllamaModels()
+            
+            // Загружаем модели с задержкой, чтобы дать время на подключение
+            viewModelScope.launch {
+                delay(500) // Небольшая задержка для стабилизации подключения
+                loadOllamaModels()
+            }
         }
     }
     
@@ -748,6 +808,8 @@ class ChatViewModel(
         viewModelScope.launch {
             try {
                 android.util.Log.d("ChatViewModel", "Loading available Ollama models...")
+                android.util.Log.d("ChatViewModel", "🌐 OFFLINE MODE: Loading models from local Ollama server (NO internet required)")
+                
                 val response = ollamaApi.getTags()
                 
                 if (response.isSuccessful) {
@@ -757,10 +819,29 @@ class ChatViewModel(
                         it.copy(availableOllamaModels = models) 
                     }
                 } else {
-                    android.util.Log.w("ChatViewModel", "Failed to load Ollama models: ${response.code()}")
+                    val errorBody = response.errorBody()?.string() ?: "Unknown error"
+                    android.util.Log.w("ChatViewModel", "⚠️ Failed to load Ollama models: HTTP ${response.code()} - $errorBody")
+                    android.util.Log.w("ChatViewModel", "💡 This is not critical - models list will be empty, but you can still use default model")
                 }
+            } catch (e: java.net.ConnectException) {
+                android.util.Log.w("ChatViewModel", "⚠️ Cannot connect to Ollama server to load models list")
+                android.util.Log.w("ChatViewModel", "🌐 This is a LOCAL connection error (NOT internet-related)")
+                android.util.Log.w("ChatViewModel", "💡 Models list will be empty, but you can still use default model: ${preferencesManager.ollamaChatModel}")
+                android.util.Log.w("ChatViewModel", "💡 Make sure Ollama is running: ollama serve")
+                // Не показываем ошибку пользователю - это не критично, можно использовать модель по умолчанию
+            } catch (e: java.net.SocketTimeoutException) {
+                android.util.Log.w("ChatViewModel", "⚠️ Timeout loading Ollama models list")
+                android.util.Log.w("ChatViewModel", "💡 Models list will be empty, but you can still use default model")
+                // Не показываем ошибку пользователю - это не критично
+            } catch (e: java.net.UnknownHostException) {
+                android.util.Log.w("ChatViewModel", "⚠️ Cannot resolve Ollama server address to load models")
+                android.util.Log.w("ChatViewModel", "🌐 This should NOT happen in offline mode (10.0.2.2 should resolve directly)")
+                android.util.Log.w("ChatViewModel", "💡 Models list will be empty, but you can still use default model")
+                // Не показываем ошибку пользователю - это не критично
             } catch (e: Exception) {
-                android.util.Log.e("ChatViewModel", "Error loading Ollama models", e)
+                android.util.Log.w("ChatViewModel", "⚠️ Error loading Ollama models list: ${e.javaClass.simpleName} - ${e.message}")
+                android.util.Log.w("ChatViewModel", "💡 Models list will be empty, but you can still use default model: ${preferencesManager.ollamaChatModel}")
+                // Не показываем ошибку пользователю - это не критично, можно использовать модель по умолчанию
             }
         }
     }
@@ -778,10 +859,22 @@ class ChatViewModel(
         preferencesManager.ollamaEnabled = enabled
         _uiState.update { it.copy(ollamaEnabled = enabled) }
         if (enabled) {
-            android.util.Log.i("ChatViewModel", "🚀 Ollama enabled - checking server connection...")
+            android.util.Log.i("ChatViewModel", "🚀 Ollama enabled - OFFLINE MODE activated")
+            android.util.Log.i("ChatViewModel", "🌐 All chat requests will use LOCAL Ollama server (NO internet required)")
             android.util.Log.i("ChatViewModel", "📝 Note: Run './setup-ollama.sh' on your Mac to start Ollama server")
+            android.util.Log.i("ChatViewModel", "⚠️ Cloud APIs (DeepSeek, OpenAI, etc.) will NOT be used when Ollama is enabled")
+            
+            // Сначала проверяем подключение, затем загружаем модели
+            // Если подключение не удалось, модели не загрузятся, но это не критично
             checkOllamaConnection()
-            loadOllamaModels()
+            
+            // Загружаем модели с задержкой, чтобы дать время на подключение
+            viewModelScope.launch {
+                delay(500) // Небольшая задержка для стабилизации подключения
+                loadOllamaModels()
+            }
+        } else {
+            android.util.Log.i("ChatViewModel", "Ollama disabled - switching back to cloud APIs")
         }
     }
     
@@ -834,14 +927,21 @@ class ChatViewModel(
         viewModelScope.launch {
             try {
                 android.util.Log.i("ChatViewModel", "🔍 Checking Ollama server connection at http://10.0.2.2:11434...")
+                android.util.Log.i("ChatViewModel", "🌐 OFFLINE MODE: Checking local Ollama server (NO internet required)")
+                android.util.Log.i("ChatViewModel", "📡 Using local DNS resolver for direct IP resolution (10.0.2.2)")
                 
                 // Используем простой GET запрос для проверки доступности сервера
+                // Этот запрос идет ТОЛЬКО на локальный сервер (10.0.2.2), не требует интернета
+                // DNS resolver должен напрямую разрешить IP без DNS запросов
+                android.util.Log.d("ChatViewModel", "Sending GET request to http://10.0.2.2:11434/api/tags...")
                 val response = ollamaApi.getTags()
+                android.util.Log.d("ChatViewModel", "Received response: HTTP ${response.code()}")
                 
                 if (response.isSuccessful) {
                     val tagsResponse = response.body()
                     val modelCount = tagsResponse?.models?.size ?: 0
                     android.util.Log.i("ChatViewModel", "✅ Ollama server is accessible at http://10.0.2.2:11434")
+                    android.util.Log.i("ChatViewModel", "🌐 OFFLINE MODE: Local Ollama server is ready (works WITHOUT internet)")
                     android.util.Log.i("ChatViewModel", "📦 Found $modelCount model(s) on server")
                     
                     // Проверяем наличие нужной модели
@@ -862,21 +962,29 @@ class ChatViewModel(
                 }
             } catch (e: java.net.ConnectException) {
                 android.util.Log.e("ChatViewModel", "❌ Cannot connect to Ollama server at http://10.0.2.2:11434")
+                android.util.Log.e("ChatViewModel", "🌐 OFFLINE MODE: Local Ollama server is not accessible (NO internet required, but Ollama must be running)")
                 android.util.Log.e("ChatViewModel", "Connection error: ${e.message}")
+                android.util.Log.e("ChatViewModel", "Error details: ${e.javaClass.simpleName} - ${e.localizedMessage}")
                 android.util.Log.e("ChatViewModel", "Make sure:")
                 android.util.Log.e("ChatViewModel", "1. Ollama is running on your Mac: ollama serve")
                 android.util.Log.e("ChatViewModel", "2. Test from Mac: curl http://localhost:11434/api/tags")
                 android.util.Log.e("ChatViewModel", "3. Test from emulator: adb shell curl http://10.0.2.2:11434/api/tags")
                 android.util.Log.e("ChatViewModel", "4. Check firewall settings on Mac")
-                _events.emit(ChatEvent.ShowError("Cannot connect to Ollama server. Make sure Ollama is running on your Mac and accessible via http://10.0.2.2:11434"))
+                android.util.Log.e("ChatViewModel", "5. Verify emulator can access host: adb shell ping -c 1 10.0.2.2")
+                android.util.Log.e("ChatViewModel", "⚠️ Note: This is OFFLINE mode - no internet connection is needed, only local Ollama server")
+                _events.emit(ChatEvent.ShowError("Не удалось подключиться к локальному Ollama серверу. Убедитесь, что Ollama запущен на Mac: ollama serve (оффлайн режим - интернет не требуется)"))
             } catch (e: java.net.SocketTimeoutException) {
                 android.util.Log.e("ChatViewModel", "❌ Timeout connecting to Ollama server")
+                android.util.Log.e("ChatViewModel", "🌐 OFFLINE MODE: Timeout connecting to local Ollama server")
                 android.util.Log.e("ChatViewModel", "Timeout error: ${e.message}")
-                _events.emit(ChatEvent.ShowError("Timeout connecting to Ollama server. Check network connection and firewall settings."))
+                android.util.Log.e("ChatViewModel", "💡 This might indicate that Ollama server is slow to respond or not running")
+                _events.emit(ChatEvent.ShowError("Таймаут подключения к локальному Ollama серверу. Проверьте, что Ollama запущен и отвечает (оффлайн режим)"))
             } catch (e: java.net.UnknownHostException) {
                 android.util.Log.e("ChatViewModel", "❌ Unknown host: ${e.message}")
-                android.util.Log.e("ChatViewModel", "DNS resolution failed. Check network configuration.")
-                _events.emit(ChatEvent.ShowError("Cannot resolve Ollama server address. Check network configuration."))
+                android.util.Log.e("ChatViewModel", "🌐 OFFLINE MODE: DNS resolution failed for local address (this should NOT happen)")
+                android.util.Log.e("ChatViewModel", "💡 10.0.2.2 should resolve directly without DNS. Check emulator network configuration.")
+                android.util.Log.e("ChatViewModel", "💡 Try: adb shell ping -c 1 10.0.2.2")
+                _events.emit(ChatEvent.ShowError("Не удалось разрешить адрес Ollama сервера. Проверьте настройки эмулятора (оффлайн режим)"))
             } catch (e: Exception) {
                 android.util.Log.e("ChatViewModel", "❌ Error checking Ollama connection", e)
                 android.util.Log.e("ChatViewModel", "Error type: ${e.javaClass.simpleName}, message: ${e.message}")
@@ -1006,6 +1114,7 @@ class ChatViewModel(
     
     private suspend fun generateQueryEmbedding(text: String): List<Float> {
         android.util.Log.d("ChatViewModel", "Generating query embedding for: ${text.take(50)}...")
+        android.util.Log.d("ChatViewModel", "🌐 OFFLINE MODE: Generating embedding via local Ollama (NO internet required)")
         
         val request = com.example.aiagentchat.feature.chat.data.api.OllamaEmbedRequest(
             model = OllamaApi.DEFAULT_MODEL,
@@ -1095,6 +1204,8 @@ class ChatViewModel(
     }
     
     private suspend fun evaluateRelevanceWithLlm(query: String, chunkText: String, source: String): Float {
+        android.util.Log.d("ChatViewModel", "🌐 OFFLINE MODE: Evaluating relevance via local Ollama (NO internet required)")
+        
         // Формируем промпт для оценки релевантности согласно требованиям
         val prompt = buildString {
             appendLine("Оцени релевантность текста запросу по шкале от 0.0 до 1.0.")
