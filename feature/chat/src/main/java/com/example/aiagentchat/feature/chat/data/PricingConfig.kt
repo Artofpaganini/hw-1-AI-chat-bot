@@ -17,8 +17,9 @@ class PricingConfig(
             is AiModel.DeepSeek -> deepSeekInputPrice
             is AiModel.Claude35Sonnet -> claude35SonnetInputPrice
             is AiModel.Gpt4oMini -> gpt4oMiniInputPrice
-            is AiModel.GeminiPro15 -> geminiPro15InputPrice
-        }
+        is AiModel.GeminiPro15 -> geminiPro15InputPrice
+        is AiModel.VpsOllama -> 0.0
+    }
     }
 
     fun getOutputPricePerMillion(model: AiModel): Double {
@@ -27,6 +28,7 @@ class PricingConfig(
             is AiModel.Claude35Sonnet -> claude35SonnetOutputPrice
             is AiModel.Gpt4oMini -> gpt4oMiniOutputPrice
             is AiModel.GeminiPro15 -> geminiPro15OutputPrice
+            is AiModel.VpsOllama -> 0.0
         }
     }
 }

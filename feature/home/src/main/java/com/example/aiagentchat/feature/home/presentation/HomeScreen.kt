@@ -161,6 +161,10 @@ fun HomeScreen(
             localMcpServerEnabled = state.localMcpServerEnabled,
             onLocalMcpServerToggle = { enabled ->
                 viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleLocalMcpServer(enabled))
+            },
+            vpsOllamaUrl = state.vpsOllamaUrl,
+            onVpsOllamaUrlChanged = { url ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.UpdateVpsOllamaUrl(url))
             }
         )
     }

@@ -27,7 +27,8 @@ data class ChatUiState(
     val projectTeamAssistantEnabled: Boolean = false,
     val localMcpServerEnabled: Boolean = false,
     val availableOllamaModels: List<String> = emptyList(),
-    val selectedOllamaChatModel: String = "llama3.2:3b"
+    val selectedOllamaChatModel: String = "llama3.2:3b",
+    val vpsOllamaUrl: String = ""
 )
 
 sealed interface ChatAction {
@@ -51,6 +52,7 @@ sealed interface ChatAction {
     data object LoadOllamaModels : ChatAction
     data object ExportJson : ChatAction
     data object DismissJsonExport : ChatAction
+    data class UpdateVpsOllamaUrl(val url: String) : ChatAction
 }
 
 sealed interface ChatEvent {

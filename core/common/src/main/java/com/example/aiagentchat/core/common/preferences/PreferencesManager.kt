@@ -20,6 +20,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_GITHUB_MCP_ENABLED = "github_mcp_enabled"
         private const val KEY_PROJECT_ROOT_PATH = "project_root_path"
         private const val KEY_OLLAMA_CHAT_MODEL = "ollama_chat_model"
+        private const val KEY_VPS_OLLAMA_URL = "vps_ollama_url"
     }
 
     var lastUserQuery: String?
@@ -57,6 +58,10 @@ class PreferencesManager(context: Context) {
     var projectRootPath: String?
         get() = prefs.getString(KEY_PROJECT_ROOT_PATH, null)
         set(value) = prefs.edit().putString(KEY_PROJECT_ROOT_PATH, value).apply()
+    
+    var vpsOllamaUrl: String
+        get() = prefs.getString(KEY_VPS_OLLAMA_URL, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_VPS_OLLAMA_URL, value).apply()
     
     fun resetAllToggles() {
         prefs.edit()

@@ -102,6 +102,7 @@ class ChatViewModel(
         loadProjectReviewModeState()
         loadProjectTeamAssistantState()
         loadLocalMcpServerState()
+        loadVpsOllamaUrl()
     }
 
     fun onAction(action: ChatAction) {
@@ -126,6 +127,7 @@ class ChatViewModel(
             is ChatAction.ToggleLocalMcpServer -> handleToggleLocalMcpServer(action.enabled)
             is ChatAction.SelectOllamaChatModel -> handleSelectOllamaChatModel(action.model)
             is ChatAction.LoadOllamaModels -> loadOllamaModels()
+            is ChatAction.UpdateVpsOllamaUrl -> handleUpdateVpsOllamaUrl(action.url)
         }
     }
     
@@ -921,6 +923,20 @@ class ChatViewModel(
         android.util.Log.d("ChatViewModel", "Toggle Local MCP Server: $enabled")
         preferencesManager.localMcpServerEnabled = enabled
         _uiState.update { it.copy(localMcpServerEnabled = enabled) }
+    }
+    
+    private fun loadVpsOllamaUrl() {
+        val url = preferencesManager.vpsOllamaUrl
+        _uiState.update { 
+            it.copy(vpsOllamaUrl = url) 
+        }
+    }
+    
+    private fun handleUpdateVpsOllamaUrl(url: String) {
+        android.util.Log.d("ChatViewModel", "Update VPS Ollama URL: $url")
+        preferencesManager.vpsOllamaUrl = url
+        _uiState.update { it.copy(vpsOllamaUrl = url) }
+        updateConfiguredModels()
     }
     
     private fun checkOllamaConnection() {

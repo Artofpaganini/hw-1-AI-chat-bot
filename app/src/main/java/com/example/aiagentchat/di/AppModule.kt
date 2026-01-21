@@ -47,9 +47,11 @@ val appModule = module {
     single<com.example.aiagentchat.core.database.dao.VectorDao> { get<ChatDatabase>().vectorDao() }
 
     single {
+        val preferencesManager = get<com.example.aiagentchat.core.common.preferences.PreferencesManager>()
         com.example.aiagentchat.feature.chat.data.AuthManager(
             deepSeekApiKey = BuildConfig.DEEPSEEK_API_KEY,
-            openRouterApiKey = BuildConfig.OPENROUTER_API_KEY
+            openRouterApiKey = BuildConfig.OPENROUTER_API_KEY,
+            vpsOllamaUrl = preferencesManager.vpsOllamaUrl
         )
     }
     single {
@@ -66,7 +68,7 @@ val appModule = module {
     }
     single<PricingRepository> { PricingRepositoryImpl(get()) }
     single<ChatRepository> { ChatRepositoryImpl(get(), get()) }
-    single<AiModelRepository> { AiModelRepositoryImpl(get()) }
+    single<AiModelRepository> { AiModelRepositoryImpl(get(), get()) }
     single<MetricsRepository> { MetricsRepositoryImpl(get()) }
     
     single<Gson> { Gson() }

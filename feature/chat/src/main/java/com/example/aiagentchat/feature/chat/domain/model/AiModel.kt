@@ -24,12 +24,18 @@ sealed interface AiModel {
         override val modelId: String = "google/gemini-pro-1.5"
     }
 
+    data object VpsOllama : AiModel {
+        override val displayName: String = "VPS - Ollama: llama3.2:3b"
+        override val modelId: String = "llama3.2:3b"
+    }
+
     companion object {
         val entries: List<AiModel> = listOf(
             DeepSeek,
             Claude35Sonnet,
             Gpt4oMini,
-            GeminiPro15
+            GeminiPro15,
+            VpsOllama
         )
 
         fun fromDisplayName(name: String): AiModel = when (name) {
@@ -37,6 +43,7 @@ sealed interface AiModel {
             Claude35Sonnet.displayName -> Claude35Sonnet
             Gpt4oMini.displayName -> Gpt4oMini
             GeminiPro15.displayName -> GeminiPro15
+            VpsOllama.displayName -> VpsOllama
             else -> DeepSeek
         }
     }

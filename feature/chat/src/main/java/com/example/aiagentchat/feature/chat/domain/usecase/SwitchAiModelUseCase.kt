@@ -16,6 +16,9 @@ class SwitchAiModelUseCase(
 }
 
 class ModelNotConfiguredException(val model: AiModel) : Exception(
-    "API key for ${model.displayName} is not configured. Please add it to local.properties"
+    when (model) {
+        is AiModel.VpsOllama -> "VPS Ollama URL for ${model.displayName} is not configured. Please configure it in settings (⚙️)"
+        else -> "API key for ${model.displayName} is not configured. Please add it to local.properties"
+    }
 )
 

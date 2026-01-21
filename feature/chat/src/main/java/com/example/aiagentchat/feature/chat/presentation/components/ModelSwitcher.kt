@@ -104,7 +104,10 @@ fun ModelSwitcher(
                             )
                             if (!isConfigured) {
                                 Text(
-                                    text = " (no key)",
+                                    text = when (model) {
+                                        is AiModel.VpsOllama -> " (no URL)"
+                                        else -> " (no key)"
+                                    },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.outline
                                 )

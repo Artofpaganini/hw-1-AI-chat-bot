@@ -61,7 +61,9 @@ fun ToolsDialog(
     projectTeamAssistantEnabled: Boolean = false,
     onProjectTeamAssistantToggle: (Boolean) -> Unit = {},
     localMcpServerEnabled: Boolean = false,
-    onLocalMcpServerToggle: (Boolean) -> Unit = {}
+    onLocalMcpServerToggle: (Boolean) -> Unit = {},
+    vpsOllamaUrl: String = "",
+    onVpsOllamaUrlChanged: (String) -> Unit = {}
 ) {
     BasicAlertDialog(
         onDismissRequest = onDismiss,
@@ -133,6 +135,12 @@ fun ToolsDialog(
                             onProjectTeamAssistantToggle = onProjectTeamAssistantToggle,
                             localMcpServerEnabled = localMcpServerEnabled,
                             onLocalMcpServerToggle = onLocalMcpServerToggle
+                        )
+                    }
+                    item {
+                        VpsOllamaItem(
+                            vpsOllamaUrl = vpsOllamaUrl,
+                            onVpsOllamaUrlChanged = onVpsOllamaUrlChanged
                         )
                     }
                 }
@@ -456,6 +464,53 @@ private fun GitHubMcpItem(
                     onCheckedChange = onToggle
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun VpsOllamaItem(
+    vpsOllamaUrl: String,
+    onVpsOllamaUrlChanged: (String) -> Unit
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            Text(
+                text = "VPS Ollama Configuration",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Text(
+                text = "Configure VPS server URL for remote Ollama instance (e.g., http://your-vps-ip:11434)",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+            OutlinedTextField(
+                value = vpsOllamaUrl,
+                onValueChange = onVpsOllamaUrlChanged,
+                label = { Text("VPS Ollama URL") },
+                placeholder = { Text("http://your-vps-ip:11434") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                colors = TextFieldDefaults.colors()
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "After configuring, select 'VPS - Ollama: llama3.2:3b' from the model dropdown to use it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
