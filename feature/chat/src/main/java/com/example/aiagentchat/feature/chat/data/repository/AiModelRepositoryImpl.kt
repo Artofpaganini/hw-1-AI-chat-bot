@@ -87,8 +87,21 @@ class AiModelRepositoryImpl(
                         val body = response.body()!!
                         val content = body.message?.content ?: ""
                         Log.d(TAG, "Response from VPS Ollama: contentLength=${content.length}")
+                        val paramsInfo = buildString {
+                            append("\n\n---\n")
+                            append("С VPS Ollama")
+                            append("\nПараметры модели:")
+                            append("\n- Модель: ${model.modelId}")
+                            append("\n- Temperature: $temperature")
+                            append("\n- Context Window: $numCtx")
+                            append("\n- Max Tokens: $numPredict")
+                            if (useAndroidPrompt) {
+                                append("\n- Android/Kotlin/Compose Prompt: включен")
+                            }
+                        }
+                        val contentWithParams = content + paramsInfo
                         val aiResponse = AiResponse(
-                            content = content,
+                            content = contentWithParams,
                             inputTokens = body.promptEvalCount ?: 0,
                             outputTokens = body.evalCount ?: 0,
                             toolCalls = null,

@@ -51,7 +51,7 @@ val appModule = module {
         com.example.aiagentchat.feature.chat.data.AuthManager(
             deepSeekApiKey = BuildConfig.DEEPSEEK_API_KEY,
             openRouterApiKey = BuildConfig.OPENROUTER_API_KEY,
-            vpsOllamaUrl = preferencesManager.vpsOllamaUrl
+            preferencesManager = preferencesManager
         )
     }
     single {

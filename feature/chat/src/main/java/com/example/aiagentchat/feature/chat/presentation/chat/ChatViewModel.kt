@@ -655,13 +655,20 @@ class ChatViewModel(
         
         android.util.Log.d("ChatViewModel", "Sending message without Ollama")
         
+        val selectedModel = _uiState.value.selectedModel
         sendMessageUseCase(
-            model = _uiState.value.selectedModel,
+            model = selectedModel,
             messages = messagesWithContext
         )
             .onSuccess { aiMessage ->
-                val contentWithMarker = aiMessage.content + "\n\n---\nБез Ollama"
-                val modifiedMessage = aiMessage.copy(content = contentWithMarker)
+                // Для VPS Ollama не добавляем "Без Ollama" (информация о параметрах уже добавлена в AiModelRepositoryImpl)
+                val modifiedMessage = if (selectedModel is com.example.aiagentchat.feature.chat.domain.model.AiModel.VpsOllama) {
+                    android.util.Log.d("ChatViewModel", "VPS Ollama response - skipping 'Без Ollama' marker")
+                    aiMessage
+                } else {
+                    val contentWithMarker = aiMessage.content + "\n\n---\nБез Ollama"
+                    aiMessage.copy(content = contentWithMarker)
+                }
                 
                 chatRepository.saveMessage(modifiedMessage)
                 handleCheckMessageThreshold(modifiedMessage)
@@ -1054,7 +1061,17 @@ class ChatViewModel(
     }
 
     private suspend fun buildMessagesWithContext(currentInput: String): List<ChatMessageDto> {
+        val selectedModel = _uiState.value.selectedModel
         val ollamaEnabled = _uiState.value.ollamaEnabled
+        
+        // Для VPS Ollama не отправляем историю - только текущий вопрос
+        if (selectedModel is com.example.aiagentchat.feature.chat.domain.model.AiModel.VpsOllama) {
+            android.util.Log.d("ChatViewModel", "VPS Ollama selected - sending only current message without history")
+            android.util.Log.d("ChatViewModel", "Message count: 1 (only current question)")
+            return listOf(
+                ChatMessageDto(role = "user", content = currentInput)
+            )
+        }
         
         // Если включен Ollama, используем векторный поиск
         if (ollamaEnabled) {
