@@ -31,23 +31,57 @@ class AiModelRepositoryImpl(
         return try {
             when (model) {
                 is AiModel.VpsOllama -> {
-                    val vpsUrl = preferencesManager.vpsOllamaUrl
+                    val vpsUrl = preferencesManager.vpsOllamaUrl.trim()
                     if (vpsUrl.isBlank()) {
                         return Result.failure(Exception("VPS Ollama URL for ${model.displayName} is not configured"))
                     }
-                    Log.d(TAG, "Sending request to VPS Ollama at: $vpsUrl")
+                    val normalizedUrl = if (vpsUrl.endsWith("/")) vpsUrl else "$vpsUrl/"
+                    Log.d(TAG, "Sending request to VPS Ollama")
+                    Log.d(TAG, "  Base URL: $normalizedUrl")
+                    Log.d(TAG, "  Full request URL: ${normalizedUrl}api/chat")
                     val vpsApi = VpsOllamaApi.create(vpsUrl)
+                    val temperature = preferencesManager.vpsOllamaTemperature.toDouble()
+                    var numCtx = preferencesManager.vpsOllamaNumCtx
+                    var numPredict = preferencesManager.vpsOllamaNumPredict
+                    val useAndroidPrompt = preferencesManager.vpsOllamaUseAndroidPrompt
                     val ollamaMessages = messages.map { msg ->
                         OllamaChatMessage(
-                            role = if (msg.role == "user") "user" else "assistant",
+                            role = if (msg.role == "user") "user" else if (msg.role == "system") "system" else "assistant",
                             content = msg.content ?: ""
                         )
+                    }
+                    val systemPrompt = if (useAndroidPrompt) {
+                        generateAndroidKotlinComposePrompt()
+                    } else {
+                        null
+                    }
+                    if (numCtx > 8192) {
+                        Log.w(TAG, "numCtx ($numCtx) is too large for llama3.2:3b, limiting to 8192")
+                        numCtx = 8192
+                    }
+                    if (numPredict > 4096) {
+                        Log.w(TAG, "numPredict ($numPredict) is too large, limiting to 4096")
+                        numPredict = 4096
                     }
                     val ollamaRequest = OllamaChatRequest(
                         model = model.modelId,
                         messages = ollamaMessages,
-                        stream = false
+                        stream = false,
+                        temperature = if (temperature > 0 && temperature <= 2.0) temperature else null,
+                        numCtx = if (numCtx > 0 && numCtx <= 8192) numCtx else null,
+                        numPredict = if (numPredict > 0 && numPredict <= 4096) numPredict else null,
+                        system = systemPrompt
                     )
+                    Log.d(TAG, "VPS Ollama request params:")
+                    Log.d(TAG, "  - model: ${model.modelId}")
+                    Log.d(TAG, "  - temperature: $temperature")
+                    Log.d(TAG, "  - numCtx: $numCtx")
+                    Log.d(TAG, "  - numPredict: $numPredict")
+                    Log.d(TAG, "  - useAndroidPrompt: $useAndroidPrompt")
+                    Log.d(TAG, "  - systemPrompt length: ${systemPrompt?.length ?: 0}")
+                    Log.d(TAG, "  - messages count: ${ollamaMessages.size}")
+                    val messagesPreview = ollamaMessages.take(3).joinToString("\n") { "${it.role}: ${it.content.take(50)}..." }
+                    Log.d(TAG, "  - messages preview:\n$messagesPreview")
                     val response = vpsApi.generateChat(ollamaRequest)
                     if (response.isSuccessful && response.body() != null) {
                         val body = response.body()!!
@@ -63,8 +97,16 @@ class AiModelRepositoryImpl(
                         Result.success(aiResponse)
                     } else {
                         val errorBody = response.errorBody()?.string()
-                        Log.e(TAG, "VPS Ollama API Error ${response.code()}: ${response.message()}, body: $errorBody")
-                        Result.failure(Exception("VPS Ollama API Error ${response.code()}: ${response.message()}"))
+                        Log.e(TAG, "VPS Ollama API Error ${response.code()}: ${response.message()}")
+                        Log.e(TAG, "Error body: $errorBody")
+                        Log.e(TAG, "Request was sent to: ${normalizedUrl}api/chat")
+                        Log.e(TAG, "Request params: temperature=$temperature, numCtx=$numCtx, numPredict=$numPredict")
+                        val errorMessage = if (errorBody != null && errorBody.isNotBlank()) {
+                            "VPS Ollama API Error ${response.code()}: $errorBody"
+                        } else {
+                            "VPS Ollama API Error ${response.code()}: ${response.message()}"
+                        }
+                        Result.failure(Exception(errorMessage))
                     }
                 }
                 else -> {
@@ -138,11 +180,25 @@ class AiModelRepositoryImpl(
             )
         } catch (e: java.net.SocketTimeoutException) {
             Log.e(TAG, "Network timeout for ${model.displayName}", e)
-            Result.failure(
-                Exception(
-                    "Connection timeout. Please check your internet connection and try again."
+            Log.e(TAG, "Timeout details: ${e.message}")
+            if (model is AiModel.VpsOllama) {
+                Log.e(TAG, "VPS Ollama timeout - this may indicate:")
+                Log.e(TAG, "  1. Server is processing request but taking too long")
+                Log.e(TAG, "  2. Network connection is slow")
+                Log.e(TAG, "  3. Server may be overloaded")
+                Result.failure(
+                    Exception(
+                        "VPS Ollama timeout. The server may be processing your request but it's taking too long. " +
+                        "Try reducing numPredict (max tokens) or numCtx (context window) in settings."
+                    )
                 )
-            )
+            } else {
+                Result.failure(
+                    Exception(
+                        "Connection timeout. Please check your internet connection and try again."
+                    )
+                )
+            }
         } catch (e: java.io.IOException) {
             Log.e(TAG, "Network IO error for ${model.displayName}", e)
             Result.failure(
@@ -159,6 +215,23 @@ class AiModelRepositoryImpl(
 
     override fun isModelConfigured(model: AiModel): Boolean {
         return authManager.isKeyConfigured(model)
+    }
+    
+    private fun generateAndroidKotlinComposePrompt(): String {
+        return """
+            Ты — senior Android-разработчик с опытом работы с Kotlin, Jetpack Compose, и современными Android практиками.
+            
+            Принципы:
+            - Kotlin: используй современные idioms (data classes, sealed classes, coroutines), следуй SOLID, избегай null-unsafe кода
+            - Compose: декларативность, композиция, remember/LaunchedEffect правильно, оптимизируй рекомпозиции
+            - Архитектура: Clean Architecture, Repository pattern, MVI/MVVM, DI (Dagger/Koin), Coroutines/Flow
+            - Performance: избегай memory leaks, lazy loading, кэширование, не блокируй main thread
+            - Code Quality: короткие функции (< 20 строк), понятные имена, следуй Kotlin Coding Conventions
+            
+            Формат: конкретные примеры кода, альтернативные подходы, предупреждения о проблемах, полные решения с учетом архитектуры.
+            
+            Отвечай на русском, если вопрос на русском, и на английском, если на английском.
+        """.trimIndent()
     }
 }
 

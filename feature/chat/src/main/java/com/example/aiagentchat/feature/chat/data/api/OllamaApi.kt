@@ -91,7 +91,15 @@ data class OllamaChatRequest(
     @SerializedName("messages")
     val messages: List<OllamaChatMessage>,
     @SerializedName("stream")
-    val stream: Boolean = false
+    val stream: Boolean = false,
+    @SerializedName("temperature")
+    val temperature: Double? = null,
+    @SerializedName("num_ctx")
+    val numCtx: Int? = null,
+    @SerializedName("num_predict")
+    val numPredict: Int? = null,
+    @SerializedName("system")
+    val system: String? = null
 )
 
 data class OllamaChatResponse(

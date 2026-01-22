@@ -103,6 +103,7 @@ class ChatViewModel(
         loadProjectTeamAssistantState()
         loadLocalMcpServerState()
         loadVpsOllamaUrl()
+        loadVpsOllamaModelParams()
     }
 
     fun onAction(action: ChatAction) {
@@ -128,6 +129,10 @@ class ChatViewModel(
             is ChatAction.SelectOllamaChatModel -> handleSelectOllamaChatModel(action.model)
             is ChatAction.LoadOllamaModels -> loadOllamaModels()
             is ChatAction.UpdateVpsOllamaUrl -> handleUpdateVpsOllamaUrl(action.url)
+            is ChatAction.UpdateVpsOllamaTemperature -> handleUpdateVpsOllamaTemperature(action.temperature)
+            is ChatAction.UpdateVpsOllamaNumCtx -> handleUpdateVpsOllamaNumCtx(action.numCtx)
+            is ChatAction.UpdateVpsOllamaNumPredict -> handleUpdateVpsOllamaNumPredict(action.numPredict)
+            is ChatAction.UpdateVpsOllamaUseAndroidPrompt -> handleUpdateVpsOllamaUseAndroidPrompt(action.useAndroidPrompt)
         }
     }
     
@@ -932,11 +937,50 @@ class ChatViewModel(
         }
     }
     
+    private fun loadVpsOllamaModelParams() {
+        val temperature = preferencesManager.vpsOllamaTemperature
+        val numCtx = preferencesManager.vpsOllamaNumCtx
+        val numPredict = preferencesManager.vpsOllamaNumPredict
+        val useAndroidPrompt = preferencesManager.vpsOllamaUseAndroidPrompt
+        _uiState.update { 
+            it.copy(
+                vpsOllamaTemperature = temperature,
+                vpsOllamaNumCtx = numCtx,
+                vpsOllamaNumPredict = numPredict,
+                vpsOllamaUseAndroidPrompt = useAndroidPrompt
+            ) 
+        }
+    }
+    
     private fun handleUpdateVpsOllamaUrl(url: String) {
         android.util.Log.d("ChatViewModel", "Update VPS Ollama URL: $url")
         preferencesManager.vpsOllamaUrl = url
         _uiState.update { it.copy(vpsOllamaUrl = url) }
         updateConfiguredModels()
+    }
+    
+    private fun handleUpdateVpsOllamaTemperature(temperature: Float) {
+        android.util.Log.d("ChatViewModel", "Update VPS Ollama Temperature: $temperature")
+        preferencesManager.vpsOllamaTemperature = temperature
+        _uiState.update { it.copy(vpsOllamaTemperature = temperature) }
+    }
+    
+    private fun handleUpdateVpsOllamaNumCtx(numCtx: Int) {
+        android.util.Log.d("ChatViewModel", "Update VPS Ollama NumCtx: $numCtx")
+        preferencesManager.vpsOllamaNumCtx = numCtx
+        _uiState.update { it.copy(vpsOllamaNumCtx = numCtx) }
+    }
+    
+    private fun handleUpdateVpsOllamaNumPredict(numPredict: Int) {
+        android.util.Log.d("ChatViewModel", "Update VPS Ollama NumPredict: $numPredict")
+        preferencesManager.vpsOllamaNumPredict = numPredict
+        _uiState.update { it.copy(vpsOllamaNumPredict = numPredict) }
+    }
+    
+    private fun handleUpdateVpsOllamaUseAndroidPrompt(useAndroidPrompt: Boolean) {
+        android.util.Log.d("ChatViewModel", "Update VPS Ollama UseAndroidPrompt: $useAndroidPrompt")
+        preferencesManager.vpsOllamaUseAndroidPrompt = useAndroidPrompt
+        _uiState.update { it.copy(vpsOllamaUseAndroidPrompt = useAndroidPrompt) }
     }
     
     private fun checkOllamaConnection() {

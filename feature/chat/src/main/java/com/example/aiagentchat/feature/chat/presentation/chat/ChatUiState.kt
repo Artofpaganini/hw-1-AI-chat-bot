@@ -28,7 +28,11 @@ data class ChatUiState(
     val localMcpServerEnabled: Boolean = false,
     val availableOllamaModels: List<String> = emptyList(),
     val selectedOllamaChatModel: String = "llama3.2:3b",
-    val vpsOllamaUrl: String = ""
+    val vpsOllamaUrl: String = "",
+    val vpsOllamaTemperature: Float = 0.7f,
+    val vpsOllamaNumCtx: Int = 4096,
+    val vpsOllamaNumPredict: Int = 2048,
+    val vpsOllamaUseAndroidPrompt: Boolean = true
 )
 
 sealed interface ChatAction {
@@ -53,6 +57,10 @@ sealed interface ChatAction {
     data object ExportJson : ChatAction
     data object DismissJsonExport : ChatAction
     data class UpdateVpsOllamaUrl(val url: String) : ChatAction
+    data class UpdateVpsOllamaTemperature(val temperature: Float) : ChatAction
+    data class UpdateVpsOllamaNumCtx(val numCtx: Int) : ChatAction
+    data class UpdateVpsOllamaNumPredict(val numPredict: Int) : ChatAction
+    data class UpdateVpsOllamaUseAndroidPrompt(val useAndroidPrompt: Boolean) : ChatAction
 }
 
 sealed interface ChatEvent {

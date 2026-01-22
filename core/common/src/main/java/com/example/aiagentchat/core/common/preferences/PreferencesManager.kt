@@ -21,6 +21,10 @@ class PreferencesManager(context: Context) {
         private const val KEY_PROJECT_ROOT_PATH = "project_root_path"
         private const val KEY_OLLAMA_CHAT_MODEL = "ollama_chat_model"
         private const val KEY_VPS_OLLAMA_URL = "vps_ollama_url"
+        private const val KEY_VPS_OLLAMA_TEMPERATURE = "vps_ollama_temperature"
+        private const val KEY_VPS_OLLAMA_NUM_CTX = "vps_ollama_num_ctx"
+        private const val KEY_VPS_OLLAMA_NUM_PREDICT = "vps_ollama_num_predict"
+        private const val KEY_VPS_OLLAMA_USE_ANDROID_PROMPT = "vps_ollama_use_android_prompt"
     }
 
     var lastUserQuery: String?
@@ -62,6 +66,22 @@ class PreferencesManager(context: Context) {
     var vpsOllamaUrl: String
         get() = prefs.getString(KEY_VPS_OLLAMA_URL, "") ?: ""
         set(value) = prefs.edit().putString(KEY_VPS_OLLAMA_URL, value).apply()
+    
+    var vpsOllamaTemperature: Float
+        get() = prefs.getFloat(KEY_VPS_OLLAMA_TEMPERATURE, 0.7f)
+        set(value) = prefs.edit().putFloat(KEY_VPS_OLLAMA_TEMPERATURE, value).apply()
+    
+    var vpsOllamaNumCtx: Int
+        get() = prefs.getInt(KEY_VPS_OLLAMA_NUM_CTX, 4096)
+        set(value) = prefs.edit().putInt(KEY_VPS_OLLAMA_NUM_CTX, value).apply()
+    
+    var vpsOllamaNumPredict: Int
+        get() = prefs.getInt(KEY_VPS_OLLAMA_NUM_PREDICT, 2048)
+        set(value) = prefs.edit().putInt(KEY_VPS_OLLAMA_NUM_PREDICT, value).apply()
+    
+    var vpsOllamaUseAndroidPrompt: Boolean
+        get() = prefs.getBoolean(KEY_VPS_OLLAMA_USE_ANDROID_PROMPT, true)
+        set(value) = prefs.edit().putBoolean(KEY_VPS_OLLAMA_USE_ANDROID_PROMPT, value).apply()
     
     fun resetAllToggles() {
         prefs.edit()

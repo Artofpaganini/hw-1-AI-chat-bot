@@ -165,6 +165,22 @@ fun HomeScreen(
             vpsOllamaUrl = state.vpsOllamaUrl,
             onVpsOllamaUrlChanged = { url ->
                 viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.UpdateVpsOllamaUrl(url))
+            },
+            vpsOllamaTemperature = state.vpsOllamaTemperature,
+            onVpsOllamaTemperatureChanged = { temperature ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.UpdateVpsOllamaTemperature(temperature))
+            },
+            vpsOllamaNumCtx = state.vpsOllamaNumCtx,
+            onVpsOllamaNumCtxChanged = { numCtx ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.UpdateVpsOllamaNumCtx(numCtx))
+            },
+            vpsOllamaNumPredict = state.vpsOllamaNumPredict,
+            onVpsOllamaNumPredictChanged = { numPredict ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.UpdateVpsOllamaNumPredict(numPredict))
+            },
+            vpsOllamaUseAndroidPrompt = state.vpsOllamaUseAndroidPrompt,
+            onVpsOllamaUseAndroidPromptChanged = { useAndroidPrompt ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.UpdateVpsOllamaUseAndroidPrompt(useAndroidPrompt))
             }
         )
     }

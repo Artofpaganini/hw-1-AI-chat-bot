@@ -120,12 +120,28 @@ object ApiClient {
                      baseUrl.contains("localhost") || 
                      baseUrl.contains("127.0.0.1")
         
+        val isVpsOllama = baseUrl.contains("109.73.194.244") || 
+                         (baseUrl.contains("http://") && !isLocal && baseUrl.contains(":11434"))
+        
         val client = if (isLocal) {
             Log.d(TAG, "✅ Using local OkHttp client (with local DNS resolver) for: $baseUrl")
             Log.d(TAG, "🌐 Local addresses (10.0.2.2, localhost, 127.0.0.1) will be resolved directly")
             Log.d(TAG, "📡 This client is ONLY for local addresses and does NOT affect internet requests")
             Log.d(TAG, "🔧 DNS resolver will use direct IP resolution (no DNS queries needed)")
             localOkHttpClient
+        } else if (isVpsOllama) {
+            Log.d(TAG, "✅ Using VPS Ollama OkHttp client with extended timeouts for: $baseUrl")
+            val vpsOkHttpClient = OkHttpClient.Builder()
+                .addInterceptor(loggingInterceptor)
+                .dns(dns)
+                .connectTimeout(60, TimeUnit.SECONDS)
+                .readTimeout(300, TimeUnit.SECONDS) // 5 минут для VPS Ollama (может быть медленным)
+                .writeTimeout(60, TimeUnit.SECONDS)
+                .retryOnConnectionFailure(true)
+                .followRedirects(true)
+                .followSslRedirects(true)
+                .build()
+            vpsOkHttpClient
         } else {
             Log.d(TAG, "Using internet OkHttp client (with standard DNS resolver) for: $baseUrl")
             Log.d(TAG, "✅ Internet requests use standard DNS and are NOT affected by local DNS resolver")

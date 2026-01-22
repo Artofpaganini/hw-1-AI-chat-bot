@@ -31,6 +31,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Button
+import androidx.compose.material3.Slider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
@@ -63,7 +64,15 @@ fun ToolsDialog(
     localMcpServerEnabled: Boolean = false,
     onLocalMcpServerToggle: (Boolean) -> Unit = {},
     vpsOllamaUrl: String = "",
-    onVpsOllamaUrlChanged: (String) -> Unit = {}
+    onVpsOllamaUrlChanged: (String) -> Unit = {},
+    vpsOllamaTemperature: Float = 0.7f,
+    onVpsOllamaTemperatureChanged: (Float) -> Unit = {},
+    vpsOllamaNumCtx: Int = 4096,
+    onVpsOllamaNumCtxChanged: (Int) -> Unit = {},
+    vpsOllamaNumPredict: Int = 2048,
+    onVpsOllamaNumPredictChanged: (Int) -> Unit = {},
+    vpsOllamaUseAndroidPrompt: Boolean = true,
+    onVpsOllamaUseAndroidPromptChanged: (Boolean) -> Unit = {}
 ) {
     BasicAlertDialog(
         onDismissRequest = onDismiss,
@@ -140,7 +149,15 @@ fun ToolsDialog(
                     item {
                         VpsOllamaItem(
                             vpsOllamaUrl = vpsOllamaUrl,
-                            onVpsOllamaUrlChanged = onVpsOllamaUrlChanged
+                            onVpsOllamaUrlChanged = onVpsOllamaUrlChanged,
+                            vpsOllamaTemperature = vpsOllamaTemperature,
+                            onVpsOllamaTemperatureChanged = onVpsOllamaTemperatureChanged,
+                            vpsOllamaNumCtx = vpsOllamaNumCtx,
+                            onVpsOllamaNumCtxChanged = onVpsOllamaNumCtxChanged,
+                            vpsOllamaNumPredict = vpsOllamaNumPredict,
+                            onVpsOllamaNumPredictChanged = onVpsOllamaNumPredictChanged,
+                            vpsOllamaUseAndroidPrompt = vpsOllamaUseAndroidPrompt,
+                            onVpsOllamaUseAndroidPromptChanged = onVpsOllamaUseAndroidPromptChanged
                         )
                     }
                 }
@@ -471,7 +488,15 @@ private fun GitHubMcpItem(
 @Composable
 private fun VpsOllamaItem(
     vpsOllamaUrl: String,
-    onVpsOllamaUrlChanged: (String) -> Unit
+    onVpsOllamaUrlChanged: (String) -> Unit,
+    vpsOllamaTemperature: Float,
+    onVpsOllamaTemperatureChanged: (Float) -> Unit,
+    vpsOllamaNumCtx: Int,
+    onVpsOllamaNumCtxChanged: (Int) -> Unit,
+    vpsOllamaNumPredict: Int,
+    onVpsOllamaNumPredictChanged: (Int) -> Unit,
+    vpsOllamaUseAndroidPrompt: Boolean,
+    onVpsOllamaUseAndroidPromptChanged: (Boolean) -> Unit
 ) {
     Surface(
         shape = MaterialTheme.shapes.medium,
@@ -491,7 +516,7 @@ private fun VpsOllamaItem(
                 modifier = Modifier.padding(bottom = 8.dp)
             )
             Text(
-                text = "Configure VPS server URL for remote Ollama instance (e.g., http://your-vps-ip:11434)",
+                text = "Configure VPS server URL and model parameters for remote Ollama instance",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 12.dp)
@@ -500,11 +525,136 @@ private fun VpsOllamaItem(
                 value = vpsOllamaUrl,
                 onValueChange = onVpsOllamaUrlChanged,
                 label = { Text("VPS Ollama URL") },
-                placeholder = { Text("http://your-vps-ip:11434") },
+                placeholder = { Text("http://109.73.194.244:11434") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 colors = TextFieldDefaults.colors()
             )
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+            )
+            Text(
+                text = "Model Parameters",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Column(
+                modifier = Modifier.padding(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Temperature: ${String.format("%.2f", vpsOllamaTemperature)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Controls randomness (0.0-2.0). Lower = more focused, Higher = more creative",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Slider(
+                        value = vpsOllamaTemperature,
+                        onValueChange = onVpsOllamaTemperatureChanged,
+                        valueRange = 0f..2f,
+                        steps = 19,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Context Window: $vpsOllamaNumCtx",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    Text(
+                        text = "Maximum context length in tokens (recommended: 4096-8192 for Android/Kotlin tasks)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    Slider(
+                        value = vpsOllamaNumCtx.toFloat(),
+                        onValueChange = { onVpsOllamaNumCtxChanged(it.toInt()) },
+                        valueRange = 1024f..16384f,
+                        steps = 15,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Max Tokens: $vpsOllamaNumPredict",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    Text(
+                        text = "Maximum number of tokens to generate (recommended: 2048-4096 for code generation)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    Slider(
+                        value = vpsOllamaNumPredict.toFloat(),
+                        onValueChange = { onVpsOllamaNumPredictChanged(it.toInt()) },
+                        valueRange = 512f..8192f,
+                        steps = 15,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "Android/Kotlin/Compose Prompt",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    Text(
+                        text = "Enable specialized prompt template for Android/Kotlin/Compose development tasks",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = vpsOllamaUseAndroidPrompt,
+                    onCheckedChange = onVpsOllamaUseAndroidPromptChanged
+                )
+            }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "After configuring, select 'VPS - Ollama: llama3.2:3b' from the model dropdown to use it.",
