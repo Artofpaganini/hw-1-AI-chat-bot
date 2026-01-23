@@ -44,16 +44,11 @@ class AiModelRepositoryImpl(
                     val userMessage = messages.lastOrNull()?.content ?: ""
                     Log.d(TAG, "📤 Sending request to ${model.displayName}: ${userMessage.take(100)}...")
                     
-                    // Автоматически определяем, нужен ли контекст проекта
-                    val isProjectQuery = userMessage.lowercase().let { lower ->
-                        listOf("проект", "код", "файл", "класс", "метод", "функция", "компонент",
-                                "project", "code", "file", "class", "method", "function", "component",
-                                "ошибка", "проблема", "баг", "error", "bug", "issue",
-                                "как работает", "что делает", "где находится", "how does", "what does", "where is")
-                            .any { keyword -> lower.contains(keyword) }
-                    }
+                    // Для модели OllamaLlama32b всегда используем контекст проекта
+                    // Эта модель используется только для Project Analytic, где контекст проекта обязателен
+                    val isProjectQuery = true
                     
-                    Log.d(TAG, "🔍 Query is project-related: $isProjectQuery")
+                    Log.d(TAG, "🔍 Using project context for OllamaLlama32b: $isProjectQuery")
                     
                     val mcpRequest = JsonRpcRequest(
                         id = requestId++,
@@ -67,7 +62,8 @@ class AiModelRepositoryImpl(
                         )
                     )
                     
-                    Log.d(TAG, "📡 Sending MCP request: ${gson.toJson(mcpRequest)}")
+                    Log.d(TAG, "📡 Sending MCP request with use_project_context=$isProjectQuery")
+                    Log.d(TAG, "📡 Full MCP request: ${gson.toJson(mcpRequest)}")
                     val mcpResponse = ollamaMcpApi.sendRequest(mcpRequest)
                     
                     if (mcpResponse.isSuccessful && mcpResponse.body() != null) {

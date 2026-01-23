@@ -318,8 +318,10 @@ fun main(args: Array<String>) {
                                     } else {
                                         try {
                                             logger.log(Level.INFO, "Processing chat request: ${query.take(100)}...")
+                                            logger.log(Level.INFO, "📋 use_project_context parameter: $useProjectContext")
                                             
                                             val shouldUseProjectContext = useProjectContext ?: isProjectRelatedQuery(query)
+                                            logger.log(Level.INFO, "✅ Final decision - shouldUseProjectContext: $shouldUseProjectContext")
                                             var projectContext: String? = null
                                             
                                             if (shouldUseProjectContext) {

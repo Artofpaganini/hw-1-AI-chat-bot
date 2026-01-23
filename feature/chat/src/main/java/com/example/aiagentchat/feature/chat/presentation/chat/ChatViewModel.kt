@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
+import java.util.UUID
 
 class ChatViewModel(
     private val sendMessageUseCase: SendMessageUseCase,
@@ -411,7 +412,7 @@ class ChatViewModel(
                         aiMessage.content + "\n\n---\nС Ollama и без фильтрацией"
                     }
                     
-                    val finalMessage = aiMessage.copy(content = finalContent)
+                    val finalMessage = aiMessage.copy(id = UUID.randomUUID().toString(), content = finalContent)
                     chatRepository.saveMessage(finalMessage)
                     handleCheckMessageThreshold(finalMessage)
                     val updatedMessages = _uiState.value.messages + userMessage + finalMessage
@@ -456,7 +457,7 @@ class ChatViewModel(
         )
             .onSuccess { aiMessage ->
                 val contentWithMarker = aiMessage.content + "\n\n---\nБез Ollama"
-                val modifiedMessage = aiMessage.copy(content = contentWithMarker)
+                val modifiedMessage = aiMessage.copy(id = UUID.randomUUID().toString(), content = contentWithMarker)
                 
                 chatRepository.saveMessage(modifiedMessage)
                 handleCheckMessageThreshold(modifiedMessage)
@@ -1266,7 +1267,7 @@ class ChatViewModel(
                                 appendLine("📊 Релевантность: ${relevance} (${relevancePercent}%)")
                                 appendLine("С Project Helper")
                             }
-                            val finalMessage = aiMessage.copy(content = finalContent)
+                            val finalMessage = aiMessage.copy(id = UUID.randomUUID().toString(), content = finalContent)
                             chatRepository.saveMessage(finalMessage)
                             handleCheckMessageThreshold(finalMessage)
                             val updatedMessages = _uiState.value.messages + userMessage + finalMessage
@@ -1705,7 +1706,7 @@ class ChatViewModel(
         android.util.Log.d("ChatViewModel", "✅ Final response with ${sortedSources.size} sources prepared")
         
         // Шаг 5: Сохраняем отфильтрованный ответ с источниками
-        val finalMessage = aiMessage.copy(content = finalResponseWithSources)
+        val finalMessage = aiMessage.copy(id = UUID.randomUUID().toString(), content = finalResponseWithSources)
         chatRepository.saveMessage(finalMessage)
         handleCheckMessageThreshold(finalMessage)
         val updatedMessages = _uiState.value.messages + userMessage + finalMessage
@@ -1820,7 +1821,7 @@ class ChatViewModel(
                                 appendLine("📊 Релевантность: ${relevance} (${relevancePercent}%)")
                                 appendLine("С Project Helper и Ollama")
                             }
-                            val finalMessage = aiMessage.copy(content = finalContent)
+                            val finalMessage = aiMessage.copy(id = UUID.randomUUID().toString(), content = finalContent)
                             chatRepository.saveMessage(finalMessage)
                             handleCheckMessageThreshold(finalMessage)
                             val updatedMessages = _uiState.value.messages + userMessage + finalMessage

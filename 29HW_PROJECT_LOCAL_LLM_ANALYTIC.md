@@ -214,7 +214,7 @@ PROJECT_ROOT=/path/to/project/root
    ↓
 8. Ollama MCP Server:
    - Формирует промпт с контекстом проекта
-   - Отправляет запрос в Ollama Llama 3.2b
+   - Отправляет запрос в Ollama Llama 3какrfrbtкак.2b
    ↓
 9. Llama 3.2b анализирует контекст и выдает ответ
    ↓
