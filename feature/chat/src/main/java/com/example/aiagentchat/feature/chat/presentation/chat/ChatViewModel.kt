@@ -19,10 +19,8 @@ import com.example.aiagentchat.feature.chat.data.service.TextIndexingService
 import com.example.aiagentchat.feature.chat.data.service.VectorDatabaseService
 import com.example.aiagentchat.feature.chat.data.service.MatchedChunkWithBook
 import com.example.aiagentchat.feature.chat.data.service.GitFileDetector
-import com.example.aiagentchat.feature.chat.data.repository.ReviewRepository
 import com.example.aiagentchat.feature.chat.data.api.OllamaApi
 import com.example.aiagentchat.feature.chat.data.api.ProjectHelperMcpApi
-import com.example.aiagentchat.feature.chat.data.api.GitHubMcpApi
 import com.example.aiagentchat.feature.chat.data.api.UserFormatMcpApi
 import com.example.aiagentchat.feature.chat.data.api.JsonRpcRequest
 import com.example.aiagentchat.feature.chat.data.api.JsonRpcResponse
@@ -55,7 +53,6 @@ class ChatViewModel(
     private val textIndexingService: TextIndexingService,
     private val vectorDatabaseService: com.example.aiagentchat.feature.chat.data.service.VectorDatabaseService,
     private val ollamaApi: OllamaApi,
-    private val reviewRepository: ReviewRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChatUiState())
@@ -71,21 +68,6 @@ class ChatViewModel(
         val baseUrl = "http://10.0.2.2:8081/"
         val retrofit = ApiClient.createRetrofit(baseUrl)
         retrofit.create(ProjectHelperMcpApi::class.java)
-    }
-    
-    private val githubMcpApi: GitHubMcpApi? by lazy {
-        if (preferencesManager.githubMcpEnabled) {
-            try {
-                val baseUrl = "http://10.0.2.2:8083/"
-                val retrofit = ApiClient.createRetrofit(baseUrl)
-                retrofit.create(GitHubMcpApi::class.java)
-            } catch (e: Exception) {
-                android.util.Log.e("ChatViewModel", "Failed to initialize GitHub MCP API", e)
-                null
-            }
-        } else {
-            null
-        }
     }
     
     private val userFormatMcpApi: UserFormatMcpApi by lazy {
@@ -105,11 +87,10 @@ class ChatViewModel(
         loadOllamaState()
         loadRerankingState()
         loadProjectHelperState()
-        loadGitHubMcpState()
-        loadProjectReviewModeState()
         loadProjectUserAssistantState()
         loadUserFormatTypeState()
         loadProjectFilesState()
+        loadProjectAnalyticState()
     }
 
     fun onAction(action: ChatAction) {
@@ -125,17 +106,14 @@ class ChatViewModel(
             is ChatAction.ShowMcpTools -> handleShowMcpTools()
             is ChatAction.DismissMcpTools -> handleDismissMcpTools()
             is ChatAction.ToggleOllama -> handleToggleOllama(action.enabled)
-            is ChatAction.SelectOllamaFile -> handleSelectOllamaFile(action.filePath)
-            is ChatAction.RemoveOllamaFile -> handleRemoveOllamaFile(action.filePath)
             is ChatAction.ToggleReranking -> handleToggleReranking(action.enabled)
             is ChatAction.ToggleProjectHelper -> handleToggleProjectHelper(action.enabled)
             is ChatAction.ExportJson -> handleExportJson()
             is ChatAction.DismissJsonExport -> handleDismissJsonExport()
-            is ChatAction.ToggleGitHubMcp -> handleToggleGitHubMcp(action.enabled)
-            is ChatAction.ToggleProjectReviewMode -> handleToggleProjectReviewMode(action.enabled)
             is ChatAction.ToggleProjectUserAssistant -> handleToggleProjectUserAssistant(action.enabled)
             is ChatAction.SetUserFormatType -> handleSetUserFormatType(action.formatType)
             is ChatAction.ToggleProjectFiles -> handleToggleProjectFiles(action.enabled)
+            is ChatAction.ToggleProjectAnalytic -> handleToggleProjectAnalytic(action.enabled)
         }
     }
     
@@ -241,17 +219,15 @@ class ChatViewModel(
                 return@launch
             }
             
-            // Проверяем команду /review
-            if (currentInput.startsWith("/review", ignoreCase = true)) {
-                executeProjectReview(userMessage)
-                return@launch
-            }
-            
             val projectUserAssistantEnabled = _uiState.value.projectUserAssistantEnabled
             val projectFilesEnabled = _uiState.value.projectFilesEnabled
+            val projectAnalyticEnabled = _uiState.value.projectAnalyticEnabled
+            val selectedModel = _uiState.value.selectedModel
             
-            // Если включен Project User Assistant + Ollama + Project Files, используем RAG + MCP фильтрацию
-            if (projectUserAssistantEnabled && ollamaEnabled && projectFilesEnabled) {
+            // Если включен Project Analytic и выбрана модель Ollama Llama 3.2b
+            if (projectAnalyticEnabled && selectedModel is AiModel.OllamaLlama32b) {
+                handleSendMessageWithProjectAnalytic(currentInput, userMessage)
+            } else if (projectUserAssistantEnabled && ollamaEnabled && projectFilesEnabled) {
                 handleSendMessageWithProjectUserAssistant(currentInput, userMessage)
             } else if (projectHelperEnabled && ollamaEnabled) {
                 handleSendMessageWithProjectHelper(currentInput, userMessage)
@@ -529,8 +505,6 @@ class ChatViewModel(
             preferencesManager.ollamaEnabled = false
             preferencesManager.rerankingEnabled = false
             preferencesManager.projectHelperEnabled = false
-            preferencesManager.githubMcpEnabled = false
-            preferencesManager.projectReviewModeEnabled = false
             preferencesManager.projectUserAssistantEnabled = false
             preferencesManager.projectFilesEnabled = false
             preferencesManager.ollamaSelectedFiles = emptyList()
@@ -543,8 +517,6 @@ class ChatViewModel(
                     ollamaEnabled = false,
                     rerankingEnabled = false,
                     projectHelperEnabled = false,
-                    githubMcpEnabled = false,
-                    projectReviewModeEnabled = false,
                     projectUserAssistantEnabled = false,
                     projectFilesEnabled = false,
                     ollamaSelectedFiles = emptyList(),
@@ -655,52 +627,7 @@ class ChatViewModel(
         }
     }
     
-    private fun handleSelectOllamaFile(filePath: String?) {
-        android.util.Log.d("ChatViewModel", "Select Ollama file: $filePath")
-        if (filePath == null) {
-            preferencesManager.ollamaSelectedFiles = emptyList()
-            _uiState.update { it.copy(ollamaSelectedFiles = emptyList()) }
-            return
-        }
-        
-        val currentFiles = preferencesManager.ollamaSelectedFiles.toMutableList()
-        
-        // Проверяем лимит (максимум 5 книг)
-        if (currentFiles.size >= 5) {
-            android.util.Log.w("ChatViewModel", "Cannot add more than 5 books")
-            viewModelScope.launch {
-                _events.emit(ChatEvent.ShowError("Cannot add more than 5 books. Please remove a book first."))
-            }
-            return
-        }
-        
-        // Проверяем, не добавлен ли уже этот файл
-        if (currentFiles.contains(filePath)) {
-            android.util.Log.w("ChatViewModel", "File already selected: $filePath")
-            viewModelScope.launch {
-                _events.emit(ChatEvent.ShowError("This file is already selected."))
-            }
-            return
-        }
-        
-        // Добавляем файл в список
-        currentFiles.add(filePath)
-        preferencesManager.ollamaSelectedFiles = currentFiles
-        _uiState.update { it.copy(ollamaSelectedFiles = currentFiles) }
-        
-        if (_uiState.value.ollamaEnabled) {
-            // Если Ollama включен и файл выбран, начинаем индексацию
-            startIndexingForFile(filePath)
-        }
-    }
-    
-    private fun handleRemoveOllamaFile(filePath: String) {
-        android.util.Log.d("ChatViewModel", "Remove Ollama file: $filePath")
-        val currentFiles = preferencesManager.ollamaSelectedFiles.toMutableList()
-        currentFiles.remove(filePath)
-        preferencesManager.ollamaSelectedFiles = currentFiles
-        _uiState.update { it.copy(ollamaSelectedFiles = currentFiles) }
-    }
+    // handleSelectOllamaFile and handleRemoveOllamaFile removed - external file upload functionality disabled
     
     private fun loadRerankingState() {
         val enabled = preferencesManager.rerankingEnabled
@@ -1470,7 +1397,7 @@ class ChatViewModel(
             
             val body = response.body()!!
             if (body.error != null) {
-                val errorMessage = body.error?.message ?: "Unknown error"
+                val errorMessage = body.error.message ?: "Unknown error"
                 android.util.Log.e("ChatViewModel", "❌ Project Helper MCP Error: $errorMessage")
                 
                 // Если файлы не проиндексированы, выполняем индексацию и повторяем запрос
@@ -1612,17 +1539,19 @@ class ChatViewModel(
         lines.forEach { line ->
             val sourceMatch = sourceFormat.find(line)
             if (sourceMatch != null) {
-                currentSource = sourceMatch.groupValues[1].trim()
-                if (currentSource.isNotBlank() && !currentSource.contains("Источник")) {
-                    sources.add(currentSource)
-                    android.util.Log.d("ChatViewModel", "📚 Found source (line format): $currentSource")
+                val source = sourceMatch.groupValues[1].trim()
+                currentSource = source
+                if (source.isNotBlank() && !source.contains("Источник")) {
+                    sources.add(source)
+                    android.util.Log.d("ChatViewModel", "📚 Found source (line format): $source")
                 }
             }
             
             val relevanceMatch = relevanceFormat.find(line)
-            if (relevanceMatch != null && currentSource != null) {
-                sourceRelevanceMap[currentSource!!] = relevanceMatch.groupValues[1]
-                android.util.Log.d("ChatViewModel", "📚 Added relevance for $currentSource: ${relevanceMatch.groupValues[1]}")
+            val source = currentSource
+            if (relevanceMatch != null && source != null) {
+                sourceRelevanceMap[source] = relevanceMatch.groupValues[1]
+                android.util.Log.d("ChatViewModel", "📚 Added relevance for $source: ${relevanceMatch.groupValues[1]}")
             }
         }
         
@@ -1930,65 +1859,6 @@ class ChatViewModel(
         }
     }
     
-    private fun loadGitHubMcpState() {
-        val enabled = preferencesManager.githubMcpEnabled
-        _uiState.update { 
-            it.copy(githubMcpEnabled = enabled) 
-        }
-    }
-    
-    private fun handleToggleGitHubMcp(enabled: Boolean) {
-        android.util.Log.d("ChatViewModel", "Toggle GitHub MCP: $enabled")
-        preferencesManager.githubMcpEnabled = enabled
-        _uiState.update { it.copy(githubMcpEnabled = enabled) }
-        
-        if (enabled) {
-            // Initialize GitHub MCP API when enabled
-            viewModelScope.launch {
-                try {
-                    val baseUrl = "http://10.0.2.2:8083/"
-                    val retrofit = ApiClient.createRetrofit(baseUrl)
-                    val api = retrofit.create(GitHubMcpApi::class.java)
-                    // Test connection
-                    val testRequest = JsonRpcRequest(
-                        id = 1,
-                        method = "initialize",
-                        params = mapOf(
-                            "protocolVersion" to "2024-11-05",
-                            "capabilities" to emptyMap<String, Any>(),
-                            "clientInfo" to mapOf(
-                                "name" to "ai-agent-chat",
-                                "version" to "1.0.0"
-                            )
-                        )
-                    )
-                    val testResponse = api.sendRequest(testRequest)
-                    if (testResponse.isSuccessful) {
-                        android.util.Log.i("ChatViewModel", "✅ GitHub MCP API initialized and connected")
-                    } else {
-                        android.util.Log.w("ChatViewModel", "⚠️ GitHub MCP API initialized but connection test failed")
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("ChatViewModel", "❌ Failed to initialize GitHub MCP API", e)
-                    _events.emit(ChatEvent.ShowError("Failed to initialize GitHub MCP: ${e.message}"))
-                }
-            }
-        }
-    }
-    
-    private fun loadProjectReviewModeState() {
-        val enabled = preferencesManager.projectReviewModeEnabled
-        _uiState.update { 
-            it.copy(projectReviewModeEnabled = enabled) 
-        }
-    }
-    
-    private fun handleToggleProjectReviewMode(enabled: Boolean) {
-        android.util.Log.d("ChatViewModel", "Toggle Project Review Mode: $enabled")
-        preferencesManager.projectReviewModeEnabled = enabled
-        _uiState.update { it.copy(projectReviewModeEnabled = enabled) }
-    }
-    
     private fun loadProjectUserAssistantState() {
         val enabled = preferencesManager.projectUserAssistantEnabled
         _uiState.update { 
@@ -2030,110 +1900,49 @@ class ChatViewModel(
         // Индексация будет выполнена при первом использовании, а не при включении
     }
     
-    private suspend fun executeProjectReview(userMessage: Message) {
-        if (reviewRepository == null) {
-            _uiState.update { state ->
-                state.copy(
-                    isLoading = false,
-                    error = "Review repository not available"
-                )
-            }
-            _events.emit(ChatEvent.ShowError("Review repository not available"))
-            return
+    private fun loadProjectAnalyticState() {
+        val enabled = preferencesManager.projectAnalyticEnabled
+        _uiState.update { 
+            it.copy(projectAnalyticEnabled = enabled) 
         }
-        
+    }
+    
+    private fun handleToggleProjectAnalytic(enabled: Boolean) {
+        android.util.Log.d("ChatViewModel", "Toggle Project Analytic: $enabled")
+        preferencesManager.projectAnalyticEnabled = enabled
+        _uiState.update { it.copy(projectAnalyticEnabled = enabled) }
+    }
+    
+    private suspend fun handleSendMessageWithProjectAnalytic(currentInput: String, userMessage: Message) {
         try {
-            android.util.Log.d("ChatViewModel", "🔍 Starting project review...")
+            android.util.Log.d("ChatViewModel", "📊 Processing message with Project Analytic: ${currentInput.take(50)}...")
             
-            // Get changed files
-            val changedFilesResult = reviewRepository.getChangedFiles()
-            if (changedFilesResult.isFailure) {
-                val exception = changedFilesResult.exceptionOrNull()
-                val errorMessage = exception?.message?.takeIf { it.isNotBlank() } 
-                    ?: exception?.toString()?.takeIf { it.isNotBlank() }
-                    ?: "Unknown error"
-                val fullErrorMessage = "Failed to detect changed files: $errorMessage"
-                android.util.Log.e("ChatViewModel", fullErrorMessage, exception)
-                _uiState.update { state ->
-                    state.copy(
-                        isLoading = false,
-                        error = fullErrorMessage
-                    )
-                }
-                _events.emit(ChatEvent.ShowError(fullErrorMessage))
-                return
-            }
-            
-            val changedFiles = changedFilesResult.getOrNull() ?: emptyList()
-            if (changedFiles.isEmpty()) {
-                val errorMsg = "No changed files found. Make sure you have uncommitted changes."
-                _uiState.update { state ->
-                    state.copy(
-                        isLoading = false,
-                        error = errorMsg
-                    )
-                }
-                _events.emit(ChatEvent.ShowError(errorMsg))
-                return
-            }
-            
-            android.util.Log.d("ChatViewModel", "Found ${changedFiles.size} changed files")
-            
-            // Embed files if Project Review Mode is enabled
-            if (_uiState.value.projectReviewModeEnabled) {
-                reviewRepository.embedFilesForReview(changedFiles)
-                    .onFailure { error ->
-                        android.util.Log.w("ChatViewModel", "Failed to embed files: ${error.message}")
-                    }
-            }
-            
-            // Get PR diff if GitHub MCP is enabled (optional)
-            var prDiff: String? = null
-            if (_uiState.value.githubMcpEnabled && githubMcpApi != null) {
-                // Try to extract PR info from git config or environment
-                // For now, we'll skip PR diff if not explicitly provided
-                // In the future, we can parse git remote URL to get owner/repo
-                // and use git branch name or environment variables to get PR number
-                android.util.Log.d("ChatViewModel", "GitHub MCP enabled, but PR diff requires explicit PR number (owner, repo, pullNumber)")
-            }
-            
-            // Generate review prompt
-            val reviewPrompt = reviewRepository.generateReviewPrompt(changedFiles, prDiff)
-            
-            // Send to AI for review
-            val messagesWithContext = listOf(
-                ChatMessageDto(role = "user", content = reviewPrompt)
+            // Отправляем только текущий запрос без истории (каждый вопрос - новый контекст)
+            val messages = listOf(
+                ChatMessageDto(role = "user", content = currentInput)
             )
             
             sendMessageUseCase(
-                model = _uiState.value.selectedModel,
-                messages = messagesWithContext
+                model = AiModel.OllamaLlama32b,
+                messages = messages
             )
                 .onSuccess { aiMessage ->
-                    val finalContent = buildString {
-                        appendLine(aiMessage.content)
-                        appendLine()
-                        appendLine("---")
-                        appendLine("📝 Reviewed ${changedFiles.size} file(s):")
-                        changedFiles.forEach { file ->
-                            appendLine("  • ${java.io.File(file).name}")
-                        }
-                        appendLine("🔍 Code Review")
-                    }
-                    val finalMessage = aiMessage.copy(content = finalContent)
-                    chatRepository.saveMessage(finalMessage)
-                    handleCheckMessageThreshold(finalMessage)
-                    val updatedMessages = _uiState.value.messages + userMessage + finalMessage
-                    val comparison = compareModelMetricsUseCase(updatedMessages, "/review")
+                    android.util.Log.d("ChatViewModel", "✅ Got response from Project Analytic (${aiMessage.content.length} chars)")
+                    chatRepository.saveMessage(aiMessage)
+                    handleCheckMessageThreshold(aiMessage)
+                    val updatedMessages = _uiState.value.messages + userMessage + aiMessage
+                    val comparison = compareModelMetricsUseCase(updatedMessages, currentInput)
                     _uiState.update { state ->
                         state.copy(
+                            messages = updatedMessages,
                             isLoading = false,
-                            metricsComparison = comparison
+                            metricsComparison = comparison,
+                            error = null
                         )
                     }
                 }
                 .onFailure { error ->
-                    android.util.Log.e("ChatViewModel", "Error executing project review", error)
+                    android.util.Log.e("ChatViewModel", "❌ Project Analytic error", error)
                     _uiState.update { state ->
                         state.copy(
                             isLoading = false,
@@ -2143,14 +1952,14 @@ class ChatViewModel(
                     _events.emit(ChatEvent.ShowError(error.message ?: "Unknown error occurred"))
                 }
         } catch (e: Exception) {
-            android.util.Log.e("ChatViewModel", "❌ Error executing project review", e)
+            android.util.Log.e("ChatViewModel", "Error in handleSendMessageWithProjectAnalytic", e)
             _uiState.update { state ->
                 state.copy(
                     isLoading = false,
                     error = e.message ?: "Unknown error occurred"
                 )
             }
-            _events.emit(ChatEvent.ShowError("Error executing project review: ${e.message}"))
+            _events.emit(ChatEvent.ShowError(e.message ?: "Unknown error occurred"))
         }
     }
     

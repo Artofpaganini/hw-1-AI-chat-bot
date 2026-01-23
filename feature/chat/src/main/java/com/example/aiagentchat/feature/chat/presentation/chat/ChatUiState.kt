@@ -24,11 +24,10 @@ data class ChatUiState(
     val ollamaSelectedFiles: List<String> = emptyList(), // Список путей к выбранным файлам для индексации (максимум 5)
     val rerankingEnabled: Boolean = false,
     val projectHelperEnabled: Boolean = false,
-    val githubMcpEnabled: Boolean = false,
-    val projectReviewModeEnabled: Boolean = false,
     val projectUserAssistantEnabled: Boolean = false,
     val userFormatType: String = "программист",
-    val projectFilesEnabled: Boolean = false
+    val projectFilesEnabled: Boolean = false,
+    val projectAnalyticEnabled: Boolean = false
 )
 
 sealed interface ChatAction {
@@ -43,17 +42,14 @@ sealed interface ChatAction {
     data object ShowMcpTools : ChatAction
     data object DismissMcpTools : ChatAction
     data class ToggleOllama(val enabled: Boolean) : ChatAction
-    data class SelectOllamaFile(val filePath: String?) : ChatAction
-    data class RemoveOllamaFile(val filePath: String) : ChatAction
     data class ToggleReranking(val enabled: Boolean) : ChatAction
     data class ToggleProjectHelper(val enabled: Boolean) : ChatAction
     data object ExportJson : ChatAction
     data object DismissJsonExport : ChatAction
-    data class ToggleGitHubMcp(val enabled: Boolean) : ChatAction
-    data class ToggleProjectReviewMode(val enabled: Boolean) : ChatAction
     data class ToggleProjectUserAssistant(val enabled: Boolean) : ChatAction
     data class SetUserFormatType(val formatType: String) : ChatAction
     data class ToggleProjectFiles(val enabled: Boolean) : ChatAction
+    data class ToggleProjectAnalytic(val enabled: Boolean) : ChatAction
 }
 
 sealed interface ChatEvent {

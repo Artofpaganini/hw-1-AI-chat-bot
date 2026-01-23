@@ -22,6 +22,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_PROJECT_USER_ASSISTANT_ENABLED = "project_user_assistant_enabled"
         private const val KEY_USER_FORMAT_TYPE = "user_format_type"
         private const val KEY_PROJECT_FILES_ENABLED = "project_files_enabled"
+        private const val KEY_PROJECT_ANALYTIC_ENABLED = "project_analytic_enabled"
     }
 
     var lastUserQuery: String?
@@ -92,5 +93,9 @@ class PreferencesManager(context: Context) {
     var projectFilesEnabled: Boolean
         get() = prefs.getBoolean(KEY_PROJECT_FILES_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_PROJECT_FILES_ENABLED, value).apply()
+    
+    var projectAnalyticEnabled: Boolean
+        get() = prefs.getBoolean(KEY_PROJECT_ANALYTIC_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_PROJECT_ANALYTIC_ENABLED, value).apply()
 }
 

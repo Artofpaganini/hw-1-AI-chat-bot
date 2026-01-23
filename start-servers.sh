@@ -24,7 +24,7 @@ echo "Starting all MCP servers..."
 
 # Очищаем старые логи
 > /tmp/project-helper-mcp-server.log
-> /tmp/github-mcp-server.log
+> /tmp/ollama-mcp-server.log
 > /tmp/git-mcp-server.log
 > /tmp/user-format-mcp-server.log
 
@@ -35,11 +35,11 @@ cd project-helper-mcp-server
 PROJECT_HELPER_PID=$!
 cd ..
 
-# Запуск GitHub MCP Server в фоне
-echo "Starting GitHub MCP Server on port 8083..."
-cd github-mcp-server
-./start-server.sh 8083 >> /tmp/github-mcp-server.log 2>&1 &
-GITHUB_PID=$!
+# Запуск Ollama MCP Server в фоне
+echo "Starting Ollama MCP Server on port 8086..."
+cd ollama-mcp-server
+./start-server.sh 8086 >> /tmp/ollama-mcp-server.log 2>&1 &
+OLLAMA_MCP_PID=$!
 cd ..
 
 # Запуск Git MCP Server в фоне
@@ -62,19 +62,19 @@ sleep 2
 echo ""
 echo "Servers started:"
 echo "  Project Helper MCP Server: PID $PROJECT_HELPER_PID (port 8081)"
-echo "  GitHub MCP Server: PID $GITHUB_PID (port 8083)"
+echo "  Ollama MCP Server: PID $OLLAMA_MCP_PID (port 8086)"
 echo "  Git MCP Server: PID $GIT_PID (port 8084)"
 echo "  User Format MCP Server: PID $USER_FORMAT_PID (port 8085)"
 echo ""
 echo "Logs location:"
 echo "  Project Helper: /tmp/project-helper-mcp-server.log"
-echo "  GitHub: /tmp/github-mcp-server.log"
+echo "  Ollama MCP: /tmp/ollama-mcp-server.log"
 echo "  Git: /tmp/git-mcp-server.log"
 echo "  User Format: /tmp/user-format-mcp-server.log"
 echo ""
 echo "To stop servers, run:"
 echo "  ./stop-servers.sh"
-echo "  # or: kill $PROJECT_HELPER_PID $GITHUB_PID $GIT_PID $USER_FORMAT_PID"
+echo "  # or: kill $PROJECT_HELPER_PID $OLLAMA_MCP_PID $GIT_PID $USER_FORMAT_PID"
 echo ""
 echo "=========================================="
 echo "Live logs from all MCP servers:"
@@ -94,8 +94,8 @@ tail_log() {
 tail_log /tmp/project-helper-mcp-server.log "PROJECT-HELPER" &
 TAIL_PROJECT_HELPER_PID=$!
 
-tail_log /tmp/github-mcp-server.log "GITHUB" &
-TAIL_GITHUB_PID=$!
+tail_log /tmp/ollama-mcp-server.log "OLLAMA-MCP" &
+TAIL_OLLAMA_MCP_PID=$!
 
 tail_log /tmp/git-mcp-server.log "GIT" &
 TAIL_GIT_PID=$!
@@ -107,9 +107,9 @@ TAIL_USER_FORMAT_PID=$!
 cleanup() {
     echo ""
     echo "Stopping log tails..."
-    kill $TAIL_PROJECT_HELPER_PID $TAIL_GITHUB_PID $TAIL_GIT_PID $TAIL_USER_FORMAT_PID 2>/dev/null
+    kill $TAIL_PROJECT_HELPER_PID $TAIL_OLLAMA_MCP_PID $TAIL_GIT_PID $TAIL_USER_FORMAT_PID 2>/dev/null
     echo "Stopping MCP servers..."
-    kill $PROJECT_HELPER_PID $GITHUB_PID $GIT_PID $USER_FORMAT_PID 2>/dev/null
+    kill $PROJECT_HELPER_PID $OLLAMA_MCP_PID $GIT_PID $USER_FORMAT_PID 2>/dev/null
     exit
 }
 

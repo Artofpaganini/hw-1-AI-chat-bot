@@ -12,11 +12,15 @@ class AuthManager(
             is AiModel.Claude35Sonnet,
             is AiModel.Gpt4oMini,
             is AiModel.GeminiPro15 -> openRouterApiKey
+            is AiModel.OllamaLlama32b -> "" // Ollama не требует API ключа
         }
     }
 
     fun isKeyConfigured(model: AiModel): Boolean {
-        return getApiKey(model).isNotBlank()
+        return when (model) {
+            is AiModel.OllamaLlama32b -> true // Ollama всегда доступна, если сервер запущен
+            else -> getApiKey(model).isNotBlank()
+        }
     }
 }
 

@@ -41,13 +41,7 @@ app/
 DEEPSEEK_API_KEY=your_deepseek_api_key_here
 OPENROUTER_API_KEY=your_openrouter_api_key_here
 CONTEXT7_API_KEY=your_context7_api_key_here
-GITHUB_PERSONAL_ACCESS_TOKEN=your_github_personal_access_token_here
 ```
-
-**GitHub Personal Access Token:**
-- Создайте токен на https://github.com/settings/tokens
-- Выберите scopes: `repo`, `read:packages`, `read:org`
-- Используется для GitHub MCP Server (code review с PR diffs)
 
 ## Project Helper - Ассистент разработчика
 
@@ -106,10 +100,14 @@ GITHUB_PERSONAL_ACCESS_TOKEN=your_github_personal_access_token_here
    cd user-format-mcp-server
    ./start-server.sh 8085
    
+   # Ollama MCP Server (порт 8086) - для Project Analytic
+   cd ollama-mcp-server
+   ./start-server.sh 8086
+   
    # Для остановки всех серверов:
    ./stop-servers.sh
    
-   Скрипт автоматически найдет и остановит все процессы на портах 8081, 8083, 8084, 8085
+   Скрипт автоматически найдет и остановит все процессы на портах 8081, 8084, 8085, 8086
    ```
 
 3. **В приложении:**
@@ -132,6 +130,67 @@ GITHUB_PERSONAL_ACCESS_TOKEN=your_github_personal_access_token_here
 - При очистке чата все tools настройки сбрасываются в false
 
 Подробнее см. [22HW_PROJECT_USER_ASSISTENT.md](22HW_PROJECT_USER_ASSISTENT.md)
+
+## Project Analytic - Автоматизированный аналитик кодовой базы
+
+Проект поддерживает автоматизированного аналитика кодовой базы, использующего Ollama Llama 3.2b с интеграцией Vector Search и Project Helper для анализа проекта.
+
+### Настройка Project Analytic
+
+1. **Запустите Ollama сервер (ОБЯЗАТЕЛЬНО!):**
+   ```bash
+   ollama serve
+   
+   # Загрузите необходимые модели:
+   ollama pull llama3.2:1b
+   ollama pull nomic-embed-text
+   ollama pull phi3:medium
+   ```
+
+2. **Запустите MCP серверы (ОБЯЗАТЕЛЬНО!):**
+   ```bash
+   # Запустить все серверы сразу (рекомендуется):
+   ./start-servers.sh
+   
+   # Или запустить по отдельности:
+   # Project Helper MCP Server (порт 8081)
+   cd project-helper-mcp-server
+   ./start-server.sh 8081
+   
+   # Ollama MCP Server (порт 8086) - для Project Analytic
+   cd ollama-mcp-server
+   ./start-server.sh 8086
+   ```
+
+3. **В приложении:**
+   - Откройте настройки (⚙️)
+   - Включите "Project Analytic" (switcher)
+   - Выберите модель "Ollama Llama 3.2b" из списка моделей
+   - Задайте вопрос о проекте в чате
+
+4. **Использование:**
+   - Задавайте вопросы о проекте (например, "Как работает ChatViewModel?", "Где находится класс PreferencesManager?")
+   - Аналитик автоматически определит, что запрос про проект
+   - Используется Vector Search для поиска релевантной информации
+   - Llama 3.2b анализирует контекст и выдает ответ
+   - Каждый новый вопрос обрабатывается без контекста истории (новый контекст)
+
+**Особенности:**
+- Состояние Project Analytic сохраняется между сессиями (не зависит от сессии)
+- Автоматическое определение проектных запросов
+- Интеграция с Ollama Vector Search и Project Helper
+- Поддержка файлов: .md, .kt, .xml, .java, .kts, .sh
+- Модель может проверить наличие подобных проблем в других местах проекта
+
+**Проверка работы:**
+```bash
+# Проверка Ollama MCP Server
+curl -X POST http://localhost:8086/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+```
+
+Подробнее см. [29HW_PROJECT_LOCAL_LLM_ANALYTIC.md](29HW_PROJECT_LOCAL_LLM_ANALYTIC.md)
 
 ## Быстрый старт - Project User Assistant
 
@@ -295,68 +354,32 @@ curl -X POST http://localhost:8085/mcp \
 
 Подробнее см. [git-mcp-server/README.md](git-mcp-server/README.md)
 
-## Code Review System
+## Git MCP Server - Доступ к Git репозиторию
 
-Проект поддерживает автоматический code review через команду `/review`.
+Проект поддерживает доступ к git репозиторию через Git MCP Server. Это решает проблему доступа к git с Android устройства/эмулятора.
 
-### Настройка
+### Настройка Git MCP Server
 
-#### 1. Запуск Git MCP Server (обязательно)
-
-Git MCP Server необходим для доступа к git репозиторию с Android устройства:
-
-```bash
-cd git-mcp-server
-./start-server.sh
-```
-
-Сервер будет доступен на порту 8084 (по умолчанию).
-
-**Опционально:** Настройте PROJECT_ROOT в `local.properties`:
-```properties
-PROJECT_ROOT=/Users/Victor/work/hw-1-AI-chat-bot
-```
-
-#### 2. Запуск GitHub MCP Server (опционально, для PR diffs)
-
-1. **Создайте GitHub Personal Access Token:**
-   - Перейдите на https://github.com/settings/tokens
-   - Нажмите "Generate new token (classic)"
-   - Выберите scopes: `repo`, `read:packages`, `read:org`
-   - Скопируйте токен
-
-2. **Установите токен в `local.properties`:**
-   ```properties
-   GITHUB_PERSONAL_ACCESS_TOKEN=your_github_personal_access_token
-   ```
-
-3. **Запустите GitHub MCP Server:**
+1. **Запустите Git MCP Server:**
    ```bash
-   cd github-mcp-server
+   cd git-mcp-server
    ./start-server.sh
    ```
    
-   Сервер будет доступен на порту 8083 (по умолчанию).
+   Сервер будет доступен на порту 8084 (по умолчанию).
 
-#### 3. Или запустите все серверы сразу:
+2. **Настройте PROJECT_ROOT (опционально):**
+   
+   Добавьте в `local.properties`:
+   ```properties
+   PROJECT_ROOT=/Users/Victor/work/hw-1-AI-chat-bot
+   ```
 
-```bash
-./start-servers.sh
-```
+3. **Использование:**
+   - Git MCP Server используется для доступа к git репозиторию с Android устройства
+   - Автоматически используется Project Helper и другими компонентами при необходимости
 
-#### 4. В приложении:
-
-- Откройте Tools (⚙️)
-- Включите переключатель "GitHub MCP" (опционально)
-- Включите переключатель "Project Review Mode" (опционально)
-
-#### 5. Использование:
-
-- Введите `/review` в чате для автоматического code review измененных файлов
-- Git MCP Server автоматически используется для получения списка измененных файлов
-- GitHub MCP используется для получения PR diffs (если настроен)
-
-Подробнее см. [21HW_PROJECT_REVIEW_ASSISTENT.md](21HW_PROJECT_REVIEW_ASSISTENT.md)
+Подробнее см. [git-mcp-server/README.md](git-mcp-server/README.md)
 
 ## Ollama Vector Search
 
@@ -399,12 +422,9 @@ PROJECT_ROOT=/Users/Victor/work/hw-1-AI-chat-bot
    - При включении автоматически запускается скрипт `setup-ollama.sh` (на Mac)
    - Проверяется подключение к Ollama серверу
 
-2. **Прикрепите файл для индексации:**
-   - После включения Ollama появится кнопка "Select File"
-   - Нажмите на кнопку и выберите файл (.md, .txt, или .pdf)
-   - Поддерживаемые форматы: `.md`, `.txt` (`.pdf` в разработке)
-   - Файл будет скопирован во внутреннее хранилище приложения
-   - После выбора файла автоматически начнется индексация
+2. **Примечание:**
+   - Функционал загрузки файлов извне отключен
+   - Для работы с файлами проекта используйте Project Helper или Project Analytic
 
 3. **Индексация:**
    - Прогресс индексации отображается в логах

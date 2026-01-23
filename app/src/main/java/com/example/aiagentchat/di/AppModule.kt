@@ -121,16 +121,6 @@ val appModule = module {
         )
     }
     
-    single<com.example.aiagentchat.feature.chat.data.repository.ReviewRepository> {
-        com.example.aiagentchat.feature.chat.data.repository.ReviewRepository(
-            gitFileDetector = get(),
-            textIndexingService = get(),
-            vectorDatabaseService = get(),
-            ollamaApi = get(),
-            githubMcpApi = null // Will be initialized lazily in ViewModel when GitHub MCP is enabled
-        )
-    }
-
     viewModel {
         ChatViewModel(
             sendMessageUseCase = get(),
@@ -144,8 +134,7 @@ val appModule = module {
             preferencesManager = get(),
             textIndexingService = get(),
             vectorDatabaseService = get(),
-            ollamaApi = get(),
-            reviewRepository = get()
+            ollamaApi = get()
         )
     }
 }

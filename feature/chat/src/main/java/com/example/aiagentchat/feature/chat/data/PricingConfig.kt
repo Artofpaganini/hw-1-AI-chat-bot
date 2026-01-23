@@ -18,6 +18,7 @@ class PricingConfig(
             is AiModel.Claude35Sonnet -> claude35SonnetInputPrice
             is AiModel.Gpt4oMini -> gpt4oMiniInputPrice
             is AiModel.GeminiPro15 -> geminiPro15InputPrice
+            is AiModel.OllamaLlama32b -> 0.0 // Ollama работает локально, без стоимости
         }
     }
 
@@ -27,6 +28,7 @@ class PricingConfig(
             is AiModel.Claude35Sonnet -> claude35SonnetOutputPrice
             is AiModel.Gpt4oMini -> gpt4oMiniOutputPrice
             is AiModel.GeminiPro15 -> geminiPro15OutputPrice
+            is AiModel.OllamaLlama32b -> 0.0 // Ollama работает локально, без стоимости
         }
     }
 }
