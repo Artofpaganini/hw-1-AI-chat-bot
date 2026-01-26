@@ -20,5 +20,8 @@ interface ContextSummaryDao {
 
     @Query("DELETE FROM context_summaries WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<Long>)
+
+    @Query("DELETE FROM context_summaries")
+    suspend fun deleteAllSummaries()
 }
 

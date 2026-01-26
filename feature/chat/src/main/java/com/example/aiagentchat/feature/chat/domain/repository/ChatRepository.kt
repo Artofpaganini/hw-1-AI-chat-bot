@@ -16,5 +16,6 @@ interface ChatRepository {
     suspend fun insertContextSummary(summary: ContextSummary)
     suspend fun trimContextSummaries(type: SummaryType, maxItems: Int)
     suspend fun deleteMessagesByIds(ids: List<String>)
+    suspend fun deleteAllData()
 }
 

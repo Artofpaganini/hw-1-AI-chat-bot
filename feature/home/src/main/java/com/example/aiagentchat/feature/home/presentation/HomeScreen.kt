@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -65,6 +66,7 @@ import com.example.aiagentchat.feature.chat.presentation.chat.ChatEvent
 import com.example.aiagentchat.feature.chat.presentation.chat.ChatViewModel
 import com.example.aiagentchat.feature.chat.domain.model.ContextSummary
 import com.example.aiagentchat.feature.chat.presentation.components.ChatInput
+import com.example.aiagentchat.feature.chat.presentation.components.DatabaseViewDialog
 import com.example.aiagentchat.feature.chat.presentation.components.MessageBubble
 import com.example.aiagentchat.feature.chat.presentation.components.MetricsComparisonCard
 import com.example.aiagentchat.feature.chat.presentation.components.ModelSwitcher
@@ -110,6 +112,21 @@ fun HomeScreen(
         )
     }
     
+    state.databaseInfo?.let { databaseInfo ->
+        DatabaseViewDialog(
+            databaseInfo = databaseInfo,
+            onDismiss = { viewModel.onEvent(ChatEvent.OnDismissDatabaseView) },
+            onCopy = {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = ClipData.newPlainText("Database Info", databaseInfo)
+                clipboard.setPrimaryClip(clip)
+                scope.launch {
+                    snackbarHostState.showSnackbar("Database info copied to clipboard")
+                }
+            }
+        )
+    }
+
     Scaffold(
         modifier = Modifier.navigationBarsPadding(),
         topBar = {
@@ -123,6 +140,15 @@ fun HomeScreen(
                     )
                 },
                 actions = {
+                    IconButton(
+                        onClick = { viewModel.onEvent(ChatEvent.OnViewDatabase) }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Storage,
+                            contentDescription = "View Database",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     if (state.messages.isNotEmpty()) {
                         IconButton(
                             onClick = { viewModel.onEvent(ChatEvent.OnExportChat) }
@@ -133,15 +159,20 @@ fun HomeScreen(
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }
-                        IconButton(
-                            onClick = { viewModel.onEvent(ChatEvent.OnClearChat) }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Clear chat",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                            )
-                        }
+                    }
+                    IconButton(
+                        onClick = { viewModel.onEvent(ChatEvent.OnClearChat) },
+                        enabled = true
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Clear all data",
+                            tint = if (state.messages.isNotEmpty()) {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            } else {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                            }
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(

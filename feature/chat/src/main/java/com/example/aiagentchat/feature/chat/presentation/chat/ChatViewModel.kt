@@ -8,10 +8,14 @@ import com.example.aiagentchat.feature.chat.domain.model.Message
 import com.example.aiagentchat.feature.chat.domain.model.SessionContext
 import com.example.aiagentchat.feature.chat.domain.repository.AiModelRepository
 import com.example.aiagentchat.feature.chat.domain.repository.ChatRepository
+import com.example.aiagentchat.feature.chat.domain.repository.PersonalizationRepository
+import com.example.aiagentchat.feature.chat.domain.repository.PreferencesRepository
 import com.example.aiagentchat.feature.chat.domain.usecase.CompareModelMetricsUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.CompressionScheduler
 import com.example.aiagentchat.feature.chat.domain.usecase.ContextInitializer
 import com.example.aiagentchat.feature.chat.domain.usecase.ExportChatHistoryUseCase
+import com.example.aiagentchat.feature.chat.domain.usecase.GetDatabaseInfoUseCase
+import com.example.aiagentchat.feature.chat.domain.usecase.PersonalizeUserUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.SendMessageUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.SwitchAiModelUseCase
 import com.example.aiagentchat.feature.chat.data.api.ChatMessageDto
@@ -30,8 +34,12 @@ class ChatViewModel(
     private val switchAiModelUseCase: SwitchAiModelUseCase,
     private val compareModelMetricsUseCase: CompareModelMetricsUseCase,
     private val exportChatHistoryUseCase: ExportChatHistoryUseCase,
+    private val getDatabaseInfoUseCase: GetDatabaseInfoUseCase,
+    private val personalizeUserUseCase: PersonalizeUserUseCase,
     private val aiModelRepository: AiModelRepository,
     private val chatRepository: ChatRepository,
+    private val preferencesRepository: PreferencesRepository,
+    private val personalizationRepository: PersonalizationRepository,
     private val compressionScheduler: CompressionScheduler,
     private val contextInitializer: ContextInitializer
 ) : ViewModel() {
@@ -41,6 +49,8 @@ class ChatViewModel(
     
     // Legacy compatibility - expose state as 'state' for old code
     val state: StateFlow<ChatUiState> = _uiState.asStateFlow()
+    
+    private var currentUserId: String? = null
 
     private val _events = MutableSharedFlow<ChatEvent>()
     val events: SharedFlow<ChatEvent> = _events.asSharedFlow()
@@ -50,6 +60,7 @@ class ChatViewModel(
         loadMessages()
         loadSessionContext()
         observeContextSummaries()
+        loadSavedModel()
     }
 
     fun onAction(action: ChatAction) {
@@ -61,6 +72,8 @@ class ChatViewModel(
             is ChatAction.ClearChat -> handleClearChat()
             is ChatAction.ExportChat -> handleExportChat()
             is ChatAction.DismissExport -> handleDismissExport()
+            is ChatAction.ViewDatabase -> handleViewDatabase()
+            is ChatAction.DismissDatabaseView -> handleDismissDatabaseView()
             is ChatAction.CheckMessageThreshold -> handleCheckMessageThreshold(action.message)
         }
     }
@@ -75,8 +88,12 @@ class ChatViewModel(
             is ChatEvent.OnClearChat -> handleClearChat()
             is ChatEvent.OnExportChat -> handleExportChat()
             is ChatEvent.OnDismissExport -> handleDismissExport()
+            is ChatEvent.OnViewDatabase -> handleViewDatabase()
+            is ChatEvent.OnDismissDatabaseView -> handleDismissDatabaseView()
             is ChatEvent.ShowError -> handleDismissError()
             is ChatEvent.ShowExport -> { /* handled in UI */ }
+            is ChatEvent.ShowDatabaseInfo -> { /* handled in UI */ }
+            else -> { /* other events */ }
         }
     }
 
@@ -140,7 +157,21 @@ class ChatViewModel(
                 )
             }
 
-            val messagesWithContext = buildMessagesWithContext(currentInput)
+            val userProfile = personalizeUserUseCase(currentInput, _uiState.value.selectedModel)
+                .getOrElse {
+                    _uiState.update { state ->
+                        state.copy(
+                            isLoading = false,
+                            error = "Ошибка персонализации: ${it.message}"
+                        )
+                    }
+                    _events.emit(ChatEvent.ShowError("Ошибка персонализации: ${it.message}"))
+                    return@launch
+                }
+
+            currentUserId = userProfile.userId
+
+            val messagesWithContext = buildMessagesWithContext(currentInput, userProfile.personalizationPrompt)
 
             sendMessageUseCase(_uiState.value.selectedModel, messagesWithContext)
                 .onSuccess { aiMessage ->
@@ -171,6 +202,9 @@ class ChatViewModel(
         switchAiModelUseCase(model)
             .onSuccess { selectedModel ->
                 _uiState.update { it.copy(selectedModel = selectedModel, error = null) }
+                viewModelScope.launch {
+                    preferencesRepository.saveSelectedModel(selectedModel)
+                }
             }
             .onFailure { error ->
                 _uiState.update { it.copy(error = error.message) }
@@ -180,13 +214,22 @@ class ChatViewModel(
             }
     }
 
+    private fun loadSavedModel() {
+        viewModelScope.launch {
+            val savedModel = preferencesRepository.getSelectedModel()
+            savedModel?.let { model ->
+                _uiState.update { it.copy(selectedModel = model) }
+            }
+        }
+    }
+
     private fun handleDismissError() {
         _uiState.update { it.copy(error = null) }
     }
 
     private fun handleClearChat() {
         viewModelScope.launch {
-            chatRepository.deleteAllMessages()
+            chatRepository.deleteAllData()
             _uiState.update { it.copy(messages = emptyList(), metricsComparison = null) }
         }
     }
@@ -210,6 +253,18 @@ class ChatViewModel(
         _uiState.update { it.copy(exportedToon = null) }
     }
 
+    private fun handleViewDatabase() {
+        viewModelScope.launch {
+            val databaseInfo = getDatabaseInfoUseCase()
+            _uiState.update { it.copy(databaseInfo = databaseInfo) }
+            _events.emit(ChatEvent.ShowDatabaseInfo(databaseInfo))
+        }
+    }
+
+    private fun handleDismissDatabaseView() {
+        _uiState.update { it.copy(databaseInfo = null) }
+    }
+
     private fun handleCheckMessageThreshold(message: Message) {
         viewModelScope.launch {
             compressionScheduler.onMessageSaved(
@@ -219,11 +274,13 @@ class ChatViewModel(
         }
     }
 
-    private fun buildMessagesWithContext(currentInput: String): List<ChatMessageDto> {
+    private fun buildMessagesWithContext(currentInput: String, personalizationPrompt: String): List<ChatMessageDto> {
         val sessionContext = _uiState.value.sessionContext
         val messages = mutableListOf<ChatMessageDto>()
         
         val contextParts = mutableListOf<String>()
+        
+        contextParts.add("Персонализация пользователя:\n$personalizationPrompt")
         
         if (sessionContext.userSummaries.isNotEmpty()) {
             val userContext = sessionContext.userSummaries
@@ -262,9 +319,10 @@ class ChatViewModel(
         
         if (contextParts.isNotEmpty()) {
             val systemMessage = contextParts.joinToString("\n\n") + 
-                "\n\nИспользуй этот контекст для понимания истории разговора. " +
-                "Отвечай с учетом предыдущих обсуждений. " +
-                "Если пользователь спрашивает о чем-то из прошлого, используй этот контекст для ответа."
+                "\n\nИспользуй этот контекст для понимания истории разговора и персонализации пользователя. " +
+                "Отвечай с учетом предыдущих обсуждений и интересов пользователя. " +
+                "Если пользователь спрашивает о чем-то из прошлого, используй этот контекст для ответа. " +
+                "Предлагай релевантные темы и вопросы на основе интересов пользователя."
             messages.add(ChatMessageDto(role = "system", content = systemMessage))
         }
         

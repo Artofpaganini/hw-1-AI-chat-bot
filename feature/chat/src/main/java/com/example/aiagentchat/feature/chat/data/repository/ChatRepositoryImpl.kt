@@ -2,6 +2,8 @@ package com.example.aiagentchat.feature.chat.data.repository
 
 import com.example.aiagentchat.core.database.dao.ChatMessageDao
 import com.example.aiagentchat.core.database.dao.ContextSummaryDao
+import com.example.aiagentchat.core.database.dao.UserContextDao
+import com.example.aiagentchat.core.database.dao.UserDao
 import com.example.aiagentchat.feature.chat.data.mapper.toDomain
 import com.example.aiagentchat.feature.chat.data.mapper.toEntity
 import com.example.aiagentchat.feature.chat.domain.model.ContextSummary
@@ -13,7 +15,9 @@ import kotlinx.coroutines.flow.map
 
 class ChatRepositoryImpl(
     private val chatMessageDao: ChatMessageDao,
-    private val contextSummaryDao: ContextSummaryDao
+    private val contextSummaryDao: ContextSummaryDao,
+    private val userDao: UserDao,
+    private val userContextDao: UserContextDao
 ) : ChatRepository {
 
     override fun getAllMessages(): Flow<List<Message>> {
@@ -66,6 +70,13 @@ class ChatRepositoryImpl(
 
     override suspend fun deleteMessagesByIds(ids: List<String>) {
         ids.forEach { chatMessageDao.deleteMessage(it) }
+    }
+
+    override suspend fun deleteAllData() {
+        chatMessageDao.deleteAllMessages()
+        contextSummaryDao.deleteAllSummaries()
+        userContextDao.deleteAllContexts()
+        userDao.deleteAllUsers()
     }
 }
 

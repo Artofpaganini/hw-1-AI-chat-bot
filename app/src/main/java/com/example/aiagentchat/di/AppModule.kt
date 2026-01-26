@@ -5,21 +5,30 @@ import androidx.room.Room
 import com.example.aiagentchat.core.database.ChatDatabase
 import com.example.aiagentchat.core.database.dao.ChatMessageDao
 import com.example.aiagentchat.core.database.dao.ContextSummaryDao
+import com.example.aiagentchat.core.database.dao.UserContextDao
+import com.example.aiagentchat.core.database.dao.UserDao
 import com.example.aiagentchat.BuildConfig
 import com.example.aiagentchat.feature.chat.data.PricingConfig
 import com.example.aiagentchat.feature.chat.data.repository.AiModelRepositoryImpl
 import com.example.aiagentchat.feature.chat.data.repository.ChatRepositoryImpl
 import com.example.aiagentchat.feature.chat.data.repository.MetricsRepositoryImpl
+import com.example.aiagentchat.feature.chat.data.repository.PersonalizationRepositoryImpl
+import com.example.aiagentchat.feature.chat.data.repository.PreferencesRepositoryImpl
 import com.example.aiagentchat.feature.chat.data.repository.PricingRepositoryImpl
+import com.example.aiagentchat.feature.chat.data.service.McpContextService
 import com.example.aiagentchat.feature.chat.domain.repository.AiModelRepository
 import com.example.aiagentchat.feature.chat.domain.repository.ChatRepository
 import com.example.aiagentchat.feature.chat.domain.repository.MetricsRepository
+import com.example.aiagentchat.feature.chat.domain.repository.PersonalizationRepository
+import com.example.aiagentchat.feature.chat.domain.repository.PreferencesRepository
 import com.example.aiagentchat.feature.chat.domain.repository.PricingRepository
 import com.example.aiagentchat.feature.chat.domain.usecase.CompareModelMetricsUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.CompressionScheduler
 import com.example.aiagentchat.feature.chat.domain.usecase.ContextInitializer
 import com.example.aiagentchat.feature.chat.domain.usecase.ExportChatHistoryUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.FallbackSummarizer
+import com.example.aiagentchat.feature.chat.domain.usecase.GetDatabaseInfoUseCase
+import com.example.aiagentchat.feature.chat.domain.usecase.PersonalizeUserUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.SendMessageUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.SwitchAiModelUseCase
 import com.example.aiagentchat.feature.chat.presentation.chat.ChatViewModel
@@ -40,6 +49,8 @@ val appModule = module {
 
     single<ChatMessageDao> { get<ChatDatabase>().chatMessageDao() }
     single<ContextSummaryDao> { get<ChatDatabase>().contextSummaryDao() }
+    single<UserDao> { get<ChatDatabase>().userDao() }
+    single<UserContextDao> { get<ChatDatabase>().userContextDao() }
 
     single {
         com.example.aiagentchat.feature.chat.data.AuthManager(
@@ -60,14 +71,19 @@ val appModule = module {
         )
     }
     single<PricingRepository> { PricingRepositoryImpl(get()) }
-    single<ChatRepository> { ChatRepositoryImpl(get(), get()) }
+    single<ChatRepository> { ChatRepositoryImpl(get(), get(), get(), get()) }
     single<AiModelRepository> { AiModelRepositoryImpl(get()) }
     single<MetricsRepository> { MetricsRepositoryImpl(get()) }
+    single<McpContextService> { McpContextService(get(), get()) }
+    single<PersonalizationRepository> { PersonalizationRepositoryImpl(get(), get(), get()) }
+    single<PreferencesRepository> { PreferencesRepositoryImpl(androidContext()) }
 
     factory { SendMessageUseCase(get(), get()) }
     factory { SwitchAiModelUseCase(get()) }
     factory { CompareModelMetricsUseCase() }
     factory { ExportChatHistoryUseCase() }
+    factory { GetDatabaseInfoUseCase(get(), get(), get(), get()) }
+    factory { PersonalizeUserUseCase(get(), get()) }
 
     viewModel {
         ChatViewModel(
@@ -75,8 +91,12 @@ val appModule = module {
             switchAiModelUseCase = get(),
             compareModelMetricsUseCase = get(),
             exportChatHistoryUseCase = get(),
+            getDatabaseInfoUseCase = get(),
+            personalizeUserUseCase = get(),
             aiModelRepository = get(),
             chatRepository = get(),
+            preferencesRepository = get(),
+            personalizationRepository = get(),
             compressionScheduler = get(),
             contextInitializer = get()
         )

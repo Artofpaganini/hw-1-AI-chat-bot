@@ -15,6 +15,7 @@ data class ChatUiState(
     val availableModels: List<AiModel> = AiModel.entries,
     val configuredModels: Set<AiModel> = emptySet(),
     val exportedToon: String? = null,
+    val databaseInfo: String? = null,
     val sessionContext: SessionContext = SessionContext()
 )
 
@@ -26,6 +27,8 @@ sealed interface ChatAction {
     data object ClearChat : ChatAction
     data object ExportChat : ChatAction
     data object DismissExport : ChatAction
+    data object ViewDatabase : ChatAction
+    data object DismissDatabaseView : ChatAction
     data class CheckMessageThreshold(val message: Message) : ChatAction
 }
 
@@ -39,5 +42,8 @@ sealed interface ChatEvent {
     data object OnClearChat : ChatEvent
     data object OnExportChat : ChatEvent
     data object OnDismissExport : ChatEvent
+    data object OnViewDatabase : ChatEvent
+    data object OnDismissDatabaseView : ChatEvent
+    data class ShowDatabaseInfo(val info: String) : ChatEvent
 }
 
