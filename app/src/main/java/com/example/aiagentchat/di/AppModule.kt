@@ -32,6 +32,7 @@ import com.example.aiagentchat.feature.chat.domain.usecase.PersonalizeUserUseCas
 import com.example.aiagentchat.feature.chat.domain.usecase.SendMessageUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.SwitchAiModelUseCase
 import com.example.aiagentchat.feature.chat.presentation.chat.ChatViewModel
+import com.example.aiagentchat.data.speech.SpeechRecognizerManager
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
@@ -77,6 +78,7 @@ val appModule = module {
     single<McpContextService> { McpContextService(get(), get()) }
     single<PersonalizationRepository> { PersonalizationRepositoryImpl(get(), get(), get()) }
     single<PreferencesRepository> { PreferencesRepositoryImpl(androidContext()) }
+    single { SpeechRecognizerManager(androidContext()) }
 
     factory { SendMessageUseCase(get(), get()) }
     factory { SwitchAiModelUseCase(get()) }
@@ -98,7 +100,8 @@ val appModule = module {
             preferencesRepository = get(),
             personalizationRepository = get(),
             compressionScheduler = get(),
-            contextInitializer = get()
+            contextInitializer = get(),
+            speechRecognizerManager = get()
         )
     }
 

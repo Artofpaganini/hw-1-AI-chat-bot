@@ -12,6 +12,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,9 +37,11 @@ fun ChatInput(
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
     isLoading: Boolean,
+    isListening: Boolean = false,
+    onVoiceInputClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val canSend = value.isNotBlank() && !isLoading
+    val canSend = value.isNotBlank() && !isLoading && !isListening
     val sendButtonColor by animateColorAsState(
         targetValue = if (canSend) {
             MaterialTheme.colorScheme.primary
@@ -45,6 +49,14 @@ fun ChatInput(
             MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
         },
         label = "sendButtonColor"
+    )
+    val micButtonColor by animateColorAsState(
+        targetValue = if (isListening) {
+            MaterialTheme.colorScheme.error
+        } else {
+            MaterialTheme.colorScheme.primary
+        },
+        label = "micButtonColor"
     )
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -60,9 +72,10 @@ fun ChatInput(
             TextField(
                 value = value,
                 onValueChange = onValueChange,
+                enabled = !isListening,
                 placeholder = {
                     Text(
-                        text = "Type a message...",
+                        text = if (isListening) "Listening..." else "Type a message...",
                         color = MaterialTheme.colorScheme.outline
                     )
                 },
@@ -82,8 +95,21 @@ fun ChatInput(
                 ),
                 modifier = Modifier
                     .weight(1f)
-                    .padding(end = 8.dp)
+                    .padding(horizontal = 8.dp)
             )
+            IconButton(
+                onClick = onVoiceInputClick,
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(micButtonColor)
+            ) {
+                Icon(
+                    imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
+                    contentDescription = if (isListening) "Stop recording" else "Start voice input",
+                    tint = MaterialTheme.colorScheme.onPrimary
+                )
+            }
             IconButton(
                 onClick = onSend,
                 enabled = canSend,

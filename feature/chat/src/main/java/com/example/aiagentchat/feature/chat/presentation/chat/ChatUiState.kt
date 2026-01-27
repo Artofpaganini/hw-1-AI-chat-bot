@@ -16,7 +16,9 @@ data class ChatUiState(
     val configuredModels: Set<AiModel> = emptySet(),
     val exportedToon: String? = null,
     val databaseInfo: String? = null,
-    val sessionContext: SessionContext = SessionContext()
+    val sessionContext: SessionContext = SessionContext(),
+    val isListening: Boolean = false,
+    val speechError: String? = null
 )
 
 sealed interface ChatAction {
@@ -30,6 +32,9 @@ sealed interface ChatAction {
     data object ViewDatabase : ChatAction
     data object DismissDatabaseView : ChatAction
     data class CheckMessageThreshold(val message: Message) : ChatAction
+    data object StartVoiceInput : ChatAction
+    data object StopVoiceInput : ChatAction
+    data object DismissSpeechError : ChatAction
 }
 
 sealed interface ChatEvent {
@@ -45,5 +50,8 @@ sealed interface ChatEvent {
     data object OnViewDatabase : ChatEvent
     data object OnDismissDatabaseView : ChatEvent
     data class ShowDatabaseInfo(val info: String) : ChatEvent
+    data object OnStartVoiceInput : ChatEvent
+    data object OnStopVoiceInput : ChatEvent
+    data object OnDismissSpeechError : ChatEvent
 }
 

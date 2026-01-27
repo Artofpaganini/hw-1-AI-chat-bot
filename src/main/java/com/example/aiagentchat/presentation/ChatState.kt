@@ -13,7 +13,9 @@ data class ChatState(
     val metricsComparison: MetricsComparison? = null,
     val availableModels: List<AiModel> = AiModel.entries,
     val configuredModels: Set<AiModel> = emptySet(),
-    val exportedToon: String? = null
+    val exportedToon: String? = null,
+    val isListening: Boolean = false,
+    val speechError: String? = null
 )
 
 sealed interface ChatEvent {
@@ -24,5 +26,8 @@ sealed interface ChatEvent {
     data object OnClearChat : ChatEvent
     data object OnExportChat : ChatEvent
     data object OnDismissExport : ChatEvent
+    data object OnStartVoiceInput : ChatEvent
+    data object OnStopVoiceInput : ChatEvent
+    data object OnDismissSpeechError : ChatEvent
 }
 

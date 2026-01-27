@@ -1,6 +1,7 @@
 package com.example.aiagentchat.di
 
 import com.example.aiagentchat.data.AuthManager
+import com.example.aiagentchat.data.speech.SpeechRecognizerManager
 import com.example.aiagentchat.data.repository.AiModelRepositoryImpl
 import com.example.aiagentchat.data.repository.MetricsRepositoryImpl
 import com.example.aiagentchat.domain.repository.AiModelRepository
@@ -10,6 +11,7 @@ import com.example.aiagentchat.domain.usecase.ExportChatHistoryUseCase
 import com.example.aiagentchat.domain.usecase.SendMessageUseCase
 import com.example.aiagentchat.domain.usecase.SwitchAiModelUseCase
 import com.example.aiagentchat.presentation.ChatViewModel
+import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
 
@@ -18,6 +20,7 @@ val appModule = module {
     single { AuthManager() }
     single<AiModelRepository> { AiModelRepositoryImpl(get()) }
     single<MetricsRepository> { MetricsRepositoryImpl() }
+    single { SpeechRecognizerManager(androidContext()) }
     
     // Domain - Use Cases
     factory { SendMessageUseCase(get(), get()) }
@@ -32,7 +35,8 @@ val appModule = module {
             switchAiModelUseCase = get(),
             compareModelMetricsUseCase = get(),
             exportChatHistoryUseCase = get(),
-            aiModelRepository = get()
+            aiModelRepository = get(),
+            speechRecognizerManager = get()
         )
     }
 }

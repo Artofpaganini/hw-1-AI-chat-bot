@@ -2,6 +2,8 @@ package com.example.aiagentchat.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.aiagentchat.data.speech.SpeechRecognizerManager
+import com.example.aiagentchat.data.speech.SpeechResult
 import com.example.aiagentchat.domain.model.AiModel
 import com.example.aiagentchat.domain.model.Message
 import com.example.aiagentchat.domain.repository.AiModelRepository
@@ -9,9 +11,13 @@ import com.example.aiagentchat.domain.usecase.CompareModelMetricsUseCase
 import com.example.aiagentchat.domain.usecase.ExportChatHistoryUseCase
 import com.example.aiagentchat.domain.usecase.SendMessageUseCase
 import com.example.aiagentchat.domain.usecase.SwitchAiModelUseCase
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -20,8 +26,11 @@ class ChatViewModel(
     private val switchAiModelUseCase: SwitchAiModelUseCase,
     private val compareModelMetricsUseCase: CompareModelMetricsUseCase,
     private val exportChatHistoryUseCase: ExportChatHistoryUseCase,
-    private val aiModelRepository: AiModelRepository
+    private val aiModelRepository: AiModelRepository,
+    private val speechRecognizerManager: SpeechRecognizerManager
 ) : ViewModel() {
+    
+    private var speechRecognitionJob: Job? = null
     
     private val _state = MutableStateFlow(ChatState())
     val state: StateFlow<ChatState> = _state.asStateFlow()
@@ -39,6 +48,9 @@ class ChatViewModel(
             is ChatEvent.OnClearChat -> clearChat()
             is ChatEvent.OnExportChat -> exportChat()
             is ChatEvent.OnDismissExport -> dismissExport()
+            is ChatEvent.OnStartVoiceInput -> startVoiceInput()
+            is ChatEvent.OnStopVoiceInput -> stopVoiceInput()
+            is ChatEvent.OnDismissSpeechError -> dismissSpeechError()
         }
     }
     
@@ -303,6 +315,122 @@ class ChatViewModel(
     
     private fun dismissExport() {
         _state.update { it.copy(exportedToon = null) }
+    }
+    
+    private fun startVoiceInput() {
+        if (_state.value.isListening) {
+            return
+        }
+        if (!speechRecognizerManager.isAvailable()) {
+            _state.update { it.copy(speechError = "Speech recognition is not available") }
+            return
+        }
+        _state.update { 
+            it.copy(
+                isListening = true,
+                speechError = null
+            )
+        }
+        speechRecognitionJob = speechRecognizerManager.startListening()
+            .onEach { result ->
+                when (result) {
+                    is SpeechResult.Listening -> {
+                        _state.update { it.copy(isListening = true) }
+                    }
+                    is SpeechResult.Speaking -> {
+                    }
+                    is SpeechResult.AudioLevel -> {
+                    }
+                    is SpeechResult.Processing -> {
+                    }
+                    is SpeechResult.PartialResult -> {
+                        _state.update { it.copy(currentInput = result.text) }
+                    }
+                    is SpeechResult.Success -> {
+                        _state.update { 
+                            it.copy(
+                                currentInput = result.text,
+                                isListening = false
+                            )
+                        }
+                        sendMessageFromVoice(result.text)
+                    }
+                    is SpeechResult.Error -> {
+                        _state.update { 
+                            it.copy(
+                                isListening = false,
+                                speechError = result.message
+                            )
+                        }
+                    }
+                }
+            }
+            .catch { error ->
+                _state.update { 
+                    it.copy(
+                        isListening = false,
+                        speechError = error.message ?: "Unknown error occurred"
+                    )
+                }
+            }
+            .launchIn(viewModelScope)
+    }
+    
+    private fun stopVoiceInput() {
+        speechRecognizerManager.stopListening()
+        speechRecognitionJob?.cancel()
+        speechRecognitionJob = null
+        _state.update { it.copy(isListening = false) }
+    }
+    
+    private fun dismissSpeechError() {
+        _state.update { it.copy(speechError = null) }
+    }
+    
+    private fun sendMessageFromVoice(text: String) {
+        val trimmedText = text.trim()
+        if (trimmedText.isBlank()) return
+        val currentMessages = _state.value.messages
+        val userMessage = Message(
+            content = trimmedText,
+            isUser = true
+        )
+        _state.update { state ->
+            state.copy(
+                messages = state.messages + userMessage,
+                currentInput = "",
+                isLoading = true,
+                error = null
+            )
+        }
+        viewModelScope.launch {
+            sendMessageUseCase(_state.value.selectedModel, trimmedText)
+                .onSuccess { aiMessage ->
+                    _state.update { state ->
+                        val updatedMessages = state.messages + aiMessage
+                        val comparison = compareModelMetricsUseCase(updatedMessages, trimmedText)
+                        state.copy(
+                            messages = updatedMessages,
+                            isLoading = false,
+                            metricsComparison = comparison
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _state.update { state ->
+                        state.copy(
+                            isLoading = false,
+                            error = error.message ?: "Unknown error occurred"
+                        )
+                    }
+                }
+        }
+    }
+    
+    override fun onCleared() {
+        super.onCleared()
+        stopVoiceInput()
+        speechRecognizerManager.cancel()
     }
 }
 

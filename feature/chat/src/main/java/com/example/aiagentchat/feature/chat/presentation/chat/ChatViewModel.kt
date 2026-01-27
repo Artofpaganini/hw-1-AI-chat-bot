@@ -19,7 +19,13 @@ import com.example.aiagentchat.feature.chat.domain.usecase.PersonalizeUserUseCas
 import com.example.aiagentchat.feature.chat.domain.usecase.SendMessageUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.SwitchAiModelUseCase
 import com.example.aiagentchat.feature.chat.data.api.ChatMessageDto
+import com.example.aiagentchat.data.speech.SpeechRecognizerManager
+import com.example.aiagentchat.data.speech.SpeechResult
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,8 +47,11 @@ class ChatViewModel(
     private val preferencesRepository: PreferencesRepository,
     private val personalizationRepository: PersonalizationRepository,
     private val compressionScheduler: CompressionScheduler,
-    private val contextInitializer: ContextInitializer
+    private val contextInitializer: ContextInitializer,
+    private val speechRecognizerManager: SpeechRecognizerManager
 ) : ViewModel() {
+    
+    private var speechRecognitionJob: Job? = null
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
@@ -75,6 +84,9 @@ class ChatViewModel(
             is ChatAction.ViewDatabase -> handleViewDatabase()
             is ChatAction.DismissDatabaseView -> handleDismissDatabaseView()
             is ChatAction.CheckMessageThreshold -> handleCheckMessageThreshold(action.message)
+            is ChatAction.StartVoiceInput -> handleStartVoiceInput()
+            is ChatAction.StopVoiceInput -> handleStopVoiceInput()
+            is ChatAction.DismissSpeechError -> handleDismissSpeechError()
         }
     }
     
@@ -93,7 +105,9 @@ class ChatViewModel(
             is ChatEvent.ShowError -> handleDismissError()
             is ChatEvent.ShowExport -> { /* handled in UI */ }
             is ChatEvent.ShowDatabaseInfo -> { /* handled in UI */ }
-            else -> { /* other events */ }
+            is ChatEvent.OnStartVoiceInput -> handleStartVoiceInput()
+            is ChatEvent.OnStopVoiceInput -> handleStopVoiceInput()
+            is ChatEvent.OnDismissSpeechError -> handleDismissSpeechError()
         }
     }
 
@@ -330,6 +344,144 @@ class ChatViewModel(
         messages.add(ChatMessageDto(role = "user", content = currentInput))
         
         return messages
+    }
+    
+    private fun handleStartVoiceInput() {
+        if (_uiState.value.isListening) {
+            return
+        }
+        if (!speechRecognizerManager.isAvailable()) {
+            _uiState.update { it.copy(speechError = "Speech recognition is not available") }
+            return
+        }
+        _uiState.update { 
+            it.copy(
+                isListening = true,
+                speechError = null
+            )
+        }
+        speechRecognitionJob = speechRecognizerManager.startListening()
+            .onEach { result ->
+                when (result) {
+                    is SpeechResult.Listening -> {
+                        _uiState.update { it.copy(isListening = true) }
+                    }
+                    is SpeechResult.Speaking -> {
+                        // User is speaking, keep listening state
+                    }
+                    is SpeechResult.AudioLevel -> {
+                        // Audio level updates, can be used for visualization
+                    }
+                    is SpeechResult.Processing -> {
+                        // Processing results
+                    }
+                    is SpeechResult.PartialResult -> {
+                        _uiState.update { it.copy(currentInput = result.text) }
+                    }
+                    is SpeechResult.Success -> {
+                        _uiState.update { 
+                            it.copy(
+                                currentInput = result.text,
+                                isListening = false
+                            )
+                        }
+                        sendMessageFromVoice(result.text)
+                    }
+                    is SpeechResult.Error -> {
+                        _uiState.update { 
+                            it.copy(
+                                isListening = false,
+                                speechError = result.message
+                            )
+                        }
+                    }
+                }
+            }
+            .catch { error ->
+                _uiState.update { 
+                    it.copy(
+                        isListening = false,
+                        speechError = error.message ?: "Unknown error occurred"
+                    )
+                }
+            }
+            .launchIn(viewModelScope)
+    }
+    
+    private fun handleStopVoiceInput() {
+        speechRecognizerManager.stopListening()
+        speechRecognitionJob?.cancel()
+        speechRecognitionJob = null
+        _uiState.update { it.copy(isListening = false) }
+    }
+    
+    private fun handleDismissSpeechError() {
+        _uiState.update { it.copy(speechError = null) }
+    }
+    
+    private fun sendMessageFromVoice(text: String) {
+        val trimmedText = text.trim()
+        if (trimmedText.isBlank()) return
+        
+        val userMessage = Message(
+            content = trimmedText,
+            isUser = true
+        )
+        
+        viewModelScope.launch {
+            chatRepository.saveMessage(userMessage)
+            handleCheckMessageThreshold(userMessage)
+            _uiState.update { state ->
+                state.copy(
+                    currentInput = "",
+                    isLoading = true,
+                    error = null
+                )
+            }
+            
+            val userProfile = personalizeUserUseCase(trimmedText, _uiState.value.selectedModel)
+                .getOrElse {
+                    _uiState.update { state ->
+                        state.copy(
+                            isLoading = false,
+                            error = "Ошибка персонализации: ${it.message}"
+                        )
+                    }
+                    _events.emit(ChatEvent.ShowError("Ошибка персонализации: ${it.message}"))
+                    return@launch
+                }
+            
+            val messagesWithContext = buildMessagesWithContext(trimmedText, userProfile.personalizationPrompt)
+            
+            sendMessageUseCase(_uiState.value.selectedModel, messagesWithContext)
+                .onSuccess { aiMessage ->
+                    chatRepository.saveMessage(aiMessage)
+                    handleCheckMessageThreshold(aiMessage)
+                    val updatedMessages = _uiState.value.messages + userMessage + aiMessage
+                    val comparison = compareModelMetricsUseCase(updatedMessages, trimmedText)
+                    _uiState.update { state ->
+                        state.copy(
+                            isLoading = false,
+                            metricsComparison = comparison
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { state ->
+                        state.copy(
+                            isLoading = false,
+                            error = error.message ?: "Unknown error occurred"
+                        )
+                    }
+                    _events.emit(ChatEvent.ShowError(error.message ?: "Unknown error occurred"))
+                }
+        }
+    }
+    
+    override fun onCleared() {
+        super.onCleared()
+        handleStopVoiceInput()
+        speechRecognizerManager.cancel()
     }
 }
 

@@ -1,8 +1,11 @@
 package com.example.aiagentchat.feature.home.presentation
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -84,6 +87,45 @@ fun HomeScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            if (state.isListening) {
+                viewModel.onEvent(ChatEvent.OnStopVoiceInput)
+            } else {
+                viewModel.onEvent(ChatEvent.OnStartVoiceInput)
+            }
+        } else {
+            viewModel.onEvent(ChatEvent.OnDismissSpeechError)
+            scope.launch {
+                snackbarHostState.showSnackbar("Microphone permission is required for voice input")
+            }
+        }
+    }
+    
+    fun handleVoiceInputClick() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            val hasPermission = android.content.pm.PackageManager.PERMISSION_GRANTED ==
+                context.checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+            if (hasPermission) {
+                if (state.isListening) {
+                    viewModel.onEvent(ChatEvent.OnStopVoiceInput)
+                } else {
+                    viewModel.onEvent(ChatEvent.OnStartVoiceInput)
+                }
+            } else {
+                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        } else {
+            if (state.isListening) {
+                viewModel.onEvent(ChatEvent.OnStopVoiceInput)
+            } else {
+                viewModel.onEvent(ChatEvent.OnStartVoiceInput)
+            }
+        }
+    }
+    
     LaunchedEffect(state.messages.size) {
         if (state.messages.isNotEmpty()) {
             listState.animateScrollToItem(state.messages.size - 1)
@@ -94,6 +136,13 @@ fun HomeScreen(
         state.error?.let { error ->
             snackbarHostState.showSnackbar(error)
             viewModel.onEvent(ChatEvent.OnDismissError)
+        }
+    }
+    
+    LaunchedEffect(state.speechError) {
+        state.speechError?.let { error ->
+            snackbarHostState.showSnackbar(error)
+            viewModel.onEvent(ChatEvent.OnDismissSpeechError)
         }
     }
     
@@ -197,7 +246,9 @@ fun HomeScreen(
                     value = state.currentInput,
                     onValueChange = { viewModel.onEvent(ChatEvent.OnInputChange(it)) },
                     onSend = { viewModel.onEvent(ChatEvent.OnSendMessage) },
-                    isLoading = state.isLoading
+                    isLoading = state.isLoading,
+                    isListening = state.isListening,
+                    onVoiceInputClick = { handleVoiceInputClick() }
                 )
             }
         },

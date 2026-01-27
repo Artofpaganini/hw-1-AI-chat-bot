@@ -1,8 +1,12 @@
 package com.example.aiagentchat.presentation.ui
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -49,8 +53,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -81,6 +87,23 @@ fun ChatScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
+    var hasRecordAudioPermission by remember {
+        mutableStateOf(
+            context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasRecordAudioPermission = isGranted
+        if (!isGranted) {
+            scope.launch {
+                snackbarHostState.showSnackbar("Microphone permission is required for voice input")
+            }
+        }
+    }
+    
     // Auto-scroll to bottom when new message arrives
     LaunchedEffect(state.messages.size) {
         if (state.messages.isNotEmpty()) {
@@ -93,6 +116,14 @@ fun ChatScreen(
         state.error?.let { error ->
             snackbarHostState.showSnackbar(error)
             viewModel.onEvent(ChatEvent.OnDismissError)
+        }
+    }
+    
+    // Show speech error in snackbar
+    LaunchedEffect(state.speechError) {
+        state.speechError?.let { error ->
+            snackbarHostState.showSnackbar(error)
+            viewModel.onEvent(ChatEvent.OnDismissSpeechError)
         }
     }
     
@@ -168,7 +199,16 @@ fun ChatScreen(
                     value = state.currentInput,
                     onValueChange = { viewModel.onEvent(ChatEvent.OnInputChange(it)) },
                     onSend = { viewModel.onEvent(ChatEvent.OnSendMessage) },
-                    isLoading = state.isLoading
+                    isLoading = state.isLoading,
+                    isListening = state.isListening,
+                    onStartVoiceInput = {
+                        if (hasRecordAudioPermission) {
+                            viewModel.onEvent(ChatEvent.OnStartVoiceInput)
+                        } else {
+                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                    onStopVoiceInput = { viewModel.onEvent(ChatEvent.OnStopVoiceInput) }
                 )
             }
         },
