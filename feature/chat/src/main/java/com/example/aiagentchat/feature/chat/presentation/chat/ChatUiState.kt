@@ -1,6 +1,8 @@
 package com.example.aiagentchat.feature.chat.presentation.chat
 
 import com.example.aiagentchat.feature.chat.domain.model.AiModel
+import com.example.aiagentchat.feature.chat.domain.model.McpTool
+import com.example.aiagentchat.feature.chat.domain.model.McpServer
 import com.example.aiagentchat.feature.chat.domain.model.SessionContext
 import com.example.aiagentchat.feature.chat.domain.model.Message
 import com.example.aiagentchat.feature.chat.domain.usecase.MetricsComparison
@@ -18,7 +20,24 @@ data class ChatUiState(
     val databaseInfo: String? = null,
     val sessionContext: SessionContext = SessionContext(),
     val isListening: Boolean = false,
-    val speechError: String? = null
+    val speechError: String? = null,
+    val showToolsDialog: Boolean = false,
+    val ollamaEnabled: Boolean = false,
+    val ollamaSelectedFiles: List<String> = emptyList(),
+    val rerankingEnabled: Boolean = false,
+    val projectHelperEnabled: Boolean = false,
+    val projectUserAssistantEnabled: Boolean = false,
+    val userFormatType: String = "программист",
+    val projectFilesEnabled: Boolean = false,
+    val projectAnalyticEnabled: Boolean = false,
+    val mcpTools: List<McpTool> = emptyList(),
+    val enabledMcpTools: Set<String> = emptySet(),
+    val mcpServers: List<McpServer> = emptyList(),
+    val enabledMcpServerTools: Map<String, Set<String>> = emptyMap(),
+    val weatherNotificationsEnabled: Boolean = false,
+    val testModeEnabled: Boolean = false,
+    val remoteControlEnabled: Boolean = false,
+    val remoteControlDeviceId: String? = null
 )
 
 sealed interface ChatAction {
@@ -35,6 +54,25 @@ sealed interface ChatAction {
     data object StartVoiceInput : ChatAction
     data object StopVoiceInput : ChatAction
     data object DismissSpeechError : ChatAction
+    data object ShowToolsDialog : ChatAction
+    data object DismissToolsDialog : ChatAction
+    data class ToggleOllama(val enabled: Boolean) : ChatAction
+    data class SelectOllamaFile(val filePath: String?) : ChatAction
+    data class RemoveOllamaFile(val filePath: String) : ChatAction
+    data class ToggleReranking(val enabled: Boolean) : ChatAction
+    data class ToggleProjectHelper(val enabled: Boolean) : ChatAction
+    data class ToggleProjectUserAssistant(val enabled: Boolean) : ChatAction
+    data class SetUserFormatType(val formatType: String) : ChatAction
+    data class ToggleProjectFiles(val enabled: Boolean) : ChatAction
+    data class ToggleProjectAnalytic(val enabled: Boolean) : ChatAction
+    data object ShowMcpTools : ChatAction
+    data object DismissMcpTools : ChatAction
+    data class ToggleMcpTool(val toolName: String, val enabled: Boolean) : ChatAction
+    data class ToggleMcpServerTool(val serverId: String, val toolName: String, val enabled: Boolean) : ChatAction
+    data class ToggleWeatherNotifications(val enabled: Boolean) : ChatAction
+    data class ToggleTestMode(val enabled: Boolean) : ChatAction
+    data class ToggleRemoteControl(val enabled: Boolean) : ChatAction
+    data class SetRemoteControlDeviceId(val deviceId: String?) : ChatAction
 }
 
 sealed interface ChatEvent {

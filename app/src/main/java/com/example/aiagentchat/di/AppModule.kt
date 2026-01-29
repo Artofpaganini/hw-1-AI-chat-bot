@@ -22,6 +22,19 @@ import com.example.aiagentchat.feature.chat.domain.repository.MetricsRepository
 import com.example.aiagentchat.feature.chat.domain.repository.PersonalizationRepository
 import com.example.aiagentchat.feature.chat.domain.repository.PreferencesRepository
 import com.example.aiagentchat.feature.chat.domain.repository.PricingRepository
+import com.example.aiagentchat.feature.chat.domain.repository.McpRepository
+import com.example.aiagentchat.feature.chat.domain.repository.MultiMcpRepository
+import com.example.aiagentchat.feature.chat.data.repository.McpRepositoryImpl
+import com.example.aiagentchat.feature.chat.data.repository.MultiMcpRepositoryImpl
+import com.example.aiagentchat.feature.chat.data.api.McpApi
+import com.example.aiagentchat.feature.chat.data.api.OllamaApi
+import com.example.aiagentchat.feature.chat.data.service.VectorJsonService
+import com.example.aiagentchat.feature.chat.data.service.TextIndexingService
+import com.example.aiagentchat.feature.chat.data.service.VectorDatabaseService
+import com.example.aiagentchat.core.network.ApiClient
+import com.google.gson.Gson
+import com.example.aiagentchat.core.common.preferences.PreferencesManager
+import com.example.aiagentchat.feature.chat.data.worker.WeatherWorkManager
 import com.example.aiagentchat.feature.chat.domain.usecase.CompareModelMetricsUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.CompressionScheduler
 import com.example.aiagentchat.feature.chat.domain.usecase.ContextInitializer
@@ -32,7 +45,7 @@ import com.example.aiagentchat.feature.chat.domain.usecase.PersonalizeUserUseCas
 import com.example.aiagentchat.feature.chat.domain.usecase.SendMessageUseCase
 import com.example.aiagentchat.feature.chat.domain.usecase.SwitchAiModelUseCase
 import com.example.aiagentchat.feature.chat.presentation.chat.ChatViewModel
-import com.example.aiagentchat.data.speech.SpeechRecognizerManager
+import com.example.aiagentchat.core.common.data.speech.SpeechRecognizerManager
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
@@ -79,8 +92,67 @@ val appModule = module {
     single<PersonalizationRepository> { PersonalizationRepositoryImpl(get(), get(), get()) }
     single<PreferencesRepository> { PreferencesRepositoryImpl(androidContext()) }
     single { SpeechRecognizerManager(androidContext()) }
+    
+    single<PreferencesManager> { PreferencesManager(androidContext()) }
+    
+    single<OllamaApi> { OllamaApi.create() }
+    
+    single<VectorJsonService> {
+        VectorJsonService(androidContext())
+    }
+    
+    single<VectorDatabaseService> {
+        VectorDatabaseService(
+            indexedBookDao = get<ChatDatabase>().indexedBookDao(),
+            bookChunkDao = get<ChatDatabase>().bookChunkDao()
+        )
+    }
+    
+    single<TextIndexingService> {
+        TextIndexingService(
+            context = androidContext(),
+            ollamaApi = get(),
+            vectorDatabaseService = get()
+        )
+    }
+    
+    single<McpApi> {
+        try {
+            ApiClient.createRetrofit("https://api.context7.com/").create(McpApi::class.java)
+        } catch (e: Exception) {
+            android.util.Log.e("AppModule", "Failed to create McpApi", e)
+            throw org.koin.core.error.InstanceCreationException("Could not create McpApi: ${e.message}", e)
+        }
+    }
+    
+    single<McpRepository> {
+        McpRepositoryImpl(
+            mcpApi = get(),
+            context7ApiKey = BuildConfig.OPENROUTER_API_KEY.takeIf { it.isNotBlank() },
+            gson = get()
+        )
+    }
+    
+    single<MultiMcpRepository> {
+        MultiMcpRepositoryImpl(gson = get())
+    }
+    
+    single<WeatherWorkManager> {
+        WeatherWorkManager(androidContext())
+    }
+    
+    single<Gson> { Gson() }
 
-    factory { SendMessageUseCase(get(), get()) }
+    factory { 
+        SendMessageUseCase(
+            aiModelRepository = get(),
+            metricsRepository = get(),
+            mcpRepository = get(),
+            multiMcpRepository = get(),
+            preferencesManager = get(),
+            gson = get()
+        )
+    }
     factory { SwitchAiModelUseCase(get()) }
     factory { CompareModelMetricsUseCase() }
     factory { ExportChatHistoryUseCase() }
@@ -101,7 +173,13 @@ val appModule = module {
             personalizationRepository = get(),
             compressionScheduler = get(),
             contextInitializer = get(),
-            speechRecognizerManager = get()
+            speechRecognizerManager = get(),
+            mcpRepository = get(),
+            multiMcpRepository = get(),
+            preferencesManager = get(),
+            weatherWorkManager = get(),
+            vectorJsonService = get(),
+            ollamaApi = get()
         )
     }
 

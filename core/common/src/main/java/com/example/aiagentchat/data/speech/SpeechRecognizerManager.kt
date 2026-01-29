@@ -1,4 +1,4 @@
-package com.example.aiagentchat.data.speech
+package com.example.aiagentchat.core.common.data.speech
 
 import android.content.Context
 import android.content.Intent

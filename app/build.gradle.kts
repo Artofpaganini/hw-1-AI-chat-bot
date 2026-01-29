@@ -89,6 +89,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.activity.compose)
     implementation(libs.bundles.room)
+    implementation(libs.work.runtime.ktx)
 
     debugImplementation(libs.bundles.compose.debug)
 

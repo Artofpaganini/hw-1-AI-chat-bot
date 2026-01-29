@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -73,6 +74,10 @@ import com.example.aiagentchat.feature.chat.presentation.components.DatabaseView
 import com.example.aiagentchat.feature.chat.presentation.components.MessageBubble
 import com.example.aiagentchat.feature.chat.presentation.components.MetricsComparisonCard
 import com.example.aiagentchat.feature.chat.presentation.components.ModelSwitcher
+import com.example.aiagentchat.feature.chat.presentation.components.ToolsDialog
+import android.content.Intent
+import android.os.Build
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 
@@ -101,6 +106,30 @@ fun HomeScreen(
             scope.launch {
                 snackbarHostState.showSnackbar("Microphone permission is required for voice input")
             }
+        }
+    }
+    
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.values.all { it }
+        if (allGranted) {
+            scope.launch {
+                snackbarHostState.showSnackbar("Storage permission granted")
+            }
+        } else {
+            scope.launch {
+                snackbarHostState.showSnackbar("Storage permission denied. Please enable it in settings to use Ollama indexing.")
+            }
+        }
+    }
+    
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            val filePath = it.toString()
+            viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.SelectOllamaFile(filePath))
         }
     }
     
@@ -175,6 +204,136 @@ fun HomeScreen(
             }
         )
     }
+    
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleWeatherNotifications(true))
+        }
+    }
+    
+    if (state.showToolsDialog) {
+        ToolsDialog(
+            onDismiss = {
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.DismissToolsDialog)
+            },
+            ollamaEnabled = state.ollamaEnabled,
+            onOllamaToggle = { enabled ->
+                if (enabled) {
+                    val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        arrayOf(
+                            Manifest.permission.READ_MEDIA_IMAGES,
+                            Manifest.permission.READ_MEDIA_VIDEO,
+                            Manifest.permission.READ_MEDIA_AUDIO
+                        )
+                    } else {
+                        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+                    }
+                    
+                    val hasAllPermissions = permissions.all { permission ->
+                        ContextCompat.checkSelfPermission(context, permission) == 
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                    }
+                    
+                    if (!hasAllPermissions) {
+                        storagePermissionLauncher.launch(permissions)
+                        return@ToolsDialog
+                    }
+                }
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleOllama(enabled))
+            },
+            ollamaSelectedFiles = state.ollamaSelectedFiles,
+            onOllamaSelectFile = {
+                val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    arrayOf(
+                        Manifest.permission.READ_MEDIA_IMAGES,
+                        Manifest.permission.READ_MEDIA_VIDEO,
+                        Manifest.permission.READ_MEDIA_AUDIO
+                    )
+                } else {
+                    arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+                }
+                
+                val hasAllPermissions = permissions.all { permission ->
+                    ContextCompat.checkSelfPermission(context, permission) == 
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                }
+                
+                if (hasAllPermissions) {
+                    filePickerLauncher.launch("*/*")
+                } else {
+                    storagePermissionLauncher.launch(permissions)
+                }
+            },
+            onOllamaRemoveFile = { filePath ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.RemoveOllamaFile(filePath))
+            },
+            rerankingEnabled = state.rerankingEnabled,
+            onRerankingToggle = { enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleReranking(enabled))
+            },
+            projectHelperEnabled = state.projectHelperEnabled,
+            onProjectHelperToggle = { enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleProjectHelper(enabled))
+            },
+            projectUserAssistantEnabled = state.projectUserAssistantEnabled,
+            onProjectUserAssistantToggle = { enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleProjectUserAssistant(enabled))
+            },
+            userFormatType = state.userFormatType,
+            onUserFormatTypeChange = { formatType ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.SetUserFormatType(formatType))
+            },
+            projectFilesEnabled = state.projectFilesEnabled,
+            onProjectFilesToggle = { enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleProjectFiles(enabled))
+            },
+            projectAnalyticEnabled = state.projectAnalyticEnabled,
+            onProjectAnalyticToggle = { enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleProjectAnalytic(enabled))
+            },
+            weatherNotificationsEnabled = state.weatherNotificationsEnabled,
+            onWeatherNotificationsToggle = { enabled ->
+                if (enabled) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        val hasPermission = ContextCompat.checkSelfPermission(
+                            context,
+                            android.Manifest.permission.POST_NOTIFICATIONS
+                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        
+                        if (!hasPermission) {
+                            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                            return@ToolsDialog
+                        }
+                    }
+                }
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleWeatherNotifications(enabled))
+            },
+            testModeEnabled = state.testModeEnabled,
+            onTestModeToggle = { enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleTestMode(enabled))
+            },
+            remoteControlEnabled = state.remoteControlEnabled,
+            onRemoteControlToggle = { enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleRemoteControl(enabled))
+            },
+            remoteControlDeviceId = state.remoteControlDeviceId,
+            onRemoteControlDeviceIdChange = { deviceId ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.SetRemoteControlDeviceId(deviceId))
+            },
+            mcpTools = state.mcpTools,
+            enabledMcpTools = state.enabledMcpTools,
+            onMcpToolToggle = { toolName, enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleMcpTool(toolName, enabled))
+            },
+            mcpServers = state.mcpServers,
+            enabledMcpServerTools = state.enabledMcpServerTools,
+            onServerToolToggle = { serverId, toolName, enabled ->
+                viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ToggleMcpServerTool(serverId, toolName, enabled))
+            }
+        )
+    }
 
     Scaffold(
         modifier = Modifier.navigationBarsPadding(),
@@ -189,6 +348,15 @@ fun HomeScreen(
                     )
                 },
                 actions = {
+                    IconButton(
+                        onClick = { viewModel.onAction(com.example.aiagentchat.feature.chat.presentation.chat.ChatAction.ShowToolsDialog) }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Tools",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     IconButton(
                         onClick = { viewModel.onEvent(ChatEvent.OnViewDatabase) }
                     ) {
